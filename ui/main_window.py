@@ -324,6 +324,7 @@ class MainWindow(QMainWindow):
         self._target_dir_input = QLineEdit()
         self._target_dir_input.setPlaceholderText("留空直接修改源目录，填写则复制后再修改")
         self._target_dir_input.setStyleSheet(self._input_style())
+        self._target_dir_input.textChanged.connect(self._on_target_dir_changed)
         row3.addWidget(self._target_dir_input, 1)
         copy_btn = QPushButton("  复制客户目录名")
         copy_btn.setIcon(qta.icon("fa5s.copy", color="#888888"))
@@ -871,6 +872,11 @@ class MainWindow(QMainWindow):
             source = self._get_source_path()
             if hasattr(self, "_build_cmd_input"):
                 self._build_cmd_input.setText(self._build_default_compile_command())
+
+    def _on_target_dir_changed(self, _text: str) -> None:
+        """目标目录输入框变化时，自动刷新编译命令。"""
+        if hasattr(self, "_build_cmd_input"):
+            self._build_cmd_input.setText(self._build_default_compile_command())
 
     def _get_source_path(self):
         name = self._dir_combo.currentText()
@@ -1820,11 +1826,12 @@ class MainWindow(QMainWindow):
             self._result_detail.setPlainText("\n".join(lines))
             self._stack.setCurrentIndex(3)
 
-            # 手动执行完成后自动提交编译
+            # 手动执行完成后自动提交编译（重新读取目标目录输入框的值）
             try:
-                build_cmd = self._build_default_compile_command(target_path=str(target_path))
+                fresh_target = self._get_target_path()
+                build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
-                build_job = self._build_service.submit(str(target_path), command=build_cmd)
+                build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
                 self._build_service.set_prompt_key("1")
                 self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
                 self._build_btn.setEnabled(False)
@@ -1958,11 +1965,12 @@ class MainWindow(QMainWindow):
             self.run_button.setEnabled(True)
             self.run_button.setText("  AI 分析并提交审核")
 
-            # 自动提交编译（使用当前编译命令设置）
+            # 自动提交编译（执行完成后重新读取目标目录输入框的值）
             try:
-                build_cmd = self._build_default_compile_command(target_path=str(target_path))
+                fresh_target = self._get_target_path()
+                build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
-                build_job = self._build_service.submit(str(target_path), command=build_cmd)
+                build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
                 self._build_service.set_prompt_key("1")
                 self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
                 self._build_btn.setEnabled(False)
