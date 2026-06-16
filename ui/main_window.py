@@ -1203,9 +1203,10 @@ class MainWindow(QMainWindow):
             return target_path.split(marker, 1)[0] + "/code"
         return target_path
 
-    def _build_default_compile_command(self) -> str:
+    def _build_default_compile_command(self, target_path: str = "") -> str:
         code_dir = self._get_build_code_dir()
-        target_path = str(self._get_target_path())
+        if not target_path:
+            target_path = str(self._get_target_path())
         marker = "/code/cultraview/cusConfig/"
 
         order_args = ""
@@ -1215,7 +1216,6 @@ class MainWindow(QMainWindow):
             if segments:
                 order_args = " " + " ".join(segments)
 
-        # EXACT_MATCH=1 让 select_dialog 精确匹配目录名，避免 atv 命中 atv_ntsc
         return f"cd {code_dir} && EXACT_MATCH=1 ctvbuild all -o{order_args}"
 
     def eventFilter(self, obj, event):
@@ -1355,9 +1355,9 @@ class MainWindow(QMainWindow):
 
     def _on_start_build(self) -> None:
         try:
-            # 总是重新生成编译命令，确保路径后缀（如 -01）正确
-            # 用户可手动修改输入框，但每次编译会刷新
-            cmd = self._build_default_compile_command()
+            # 用实际目标路径生成编译命令，确保后缀正确
+            target = str(self._get_target_path())
+            cmd = self._build_default_compile_command(target_path=target)
             self._build_cmd_input.setText(cmd)
 
             self._build_log.clear()
@@ -1822,7 +1822,7 @@ class MainWindow(QMainWindow):
 
             # 手动执行完成后自动提交编译
             try:
-                build_cmd = self._build_default_compile_command()
+                build_cmd = self._build_default_compile_command(target_path=str(target_path))
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
                 build_job = self._build_service.submit(str(target_path), command=build_cmd)
                 self._build_service.set_prompt_key("1")
@@ -1960,7 +1960,7 @@ class MainWindow(QMainWindow):
 
             # 自动提交编译（使用当前编译命令设置）
             try:
-                build_cmd = self._build_default_compile_command()
+                build_cmd = self._build_default_compile_command(target_path=str(target_path))
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
                 build_job = self._build_service.submit(str(target_path), command=build_cmd)
                 self._build_service.set_prompt_key("1")
