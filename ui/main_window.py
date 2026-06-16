@@ -1822,7 +1822,7 @@ class MainWindow(QMainWindow):
 
             # 手动执行完成后自动提交编译
             try:
-                build_cmd = self._build_cmd_input.text().strip() or self._build_default_compile_command()
+                build_cmd = self._build_default_compile_command()
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
                 build_job = self._build_service.submit(str(target_path), command=build_cmd)
                 self._build_service.set_prompt_key("1")
@@ -1960,7 +1960,7 @@ class MainWindow(QMainWindow):
 
             # 自动提交编译（使用当前编译命令设置）
             try:
-                build_cmd = self._build_cmd_input.text().strip() or self._build_default_compile_command()
+                build_cmd = self._build_default_compile_command()
                 self._build_service._external_on_log = self._log_emitter.log_received.emit
                 build_job = self._build_service.submit(str(target_path), command=build_cmd)
                 self._build_service.set_prompt_key("1")
