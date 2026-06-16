@@ -1212,6 +1212,10 @@ class MainWindow(QMainWindow):
         if marker in target_path:
             relative = target_path.split(marker, 1)[1]
             segments = [seg for seg in relative.split("/") if seg]
+            # 最后一个参数用目标目录名（用户填写），而不是源客户目录名
+            target_text = self._target_dir_input.text().strip() if hasattr(self, "_target_dir_input") else ""
+            if target_text and len(segments) > 0:
+                segments[-1] = target_text
             if segments:
                 order_args = " " + " ".join(segments)
 
