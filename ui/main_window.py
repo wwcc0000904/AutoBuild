@@ -869,7 +869,7 @@ class MainWindow(QMainWindow):
     def _on_dir_changed(self, text: str) -> None:
         if text:
             source = self._get_source_path()
-            if hasattr(self, "_build_cmd_input") and not self._build_cmd_input.text().strip():
+            if hasattr(self, "_build_cmd_input"):
                 self._build_cmd_input.setText(self._build_default_compile_command())
 
     def _get_source_path(self):
