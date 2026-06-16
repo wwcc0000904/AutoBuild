@@ -1,0 +1,145 @@
+{
+    "open": {
+        "杜比": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_DOLBY",
+            "value": "y"
+        },
+        "miracast": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_MIRACAST",
+            "value": "y"
+        },
+        "HBG": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_HBG_XYDZ21001",
+            "value": "y"
+        },
+        "TVcasting": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_TVCASTING",
+            "value": "y"
+        },
+        "eshare": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_ESHARE",
+            "value": "y"
+        },
+        "蓝屏": {
+            "file": "configs/db.ini",
+            "key": "System_screencolor",
+            "value": "1"
+        }
+    },
+    "close": {
+        "杜比": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_DOLBY",
+            "value": "n"
+        },
+        "miracast": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_MIRACAST",
+            "value": "n"
+        },
+        "TVcasting": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_TVCASTING",
+            "value": "n"
+        },
+        "eshare": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_ESHARE",
+            "value": "n"
+        },
+        "蓝屏": {
+            "file": "configs/db.ini",
+            "key": "System_screencolor",
+            "value": "0"
+        }
+    },
+    "param": {
+        "电流": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_PANEL_BACKLIGHT_CURRENT",
+            "mode": "value_part",
+            "pattern": "电流[\\s]*(?:改为|为|调)?\\s*(\\d+)"
+        },
+        "客户": {
+            "file": "build_config.txt",
+            "key": "CTV_CFG_CUSTOMER",
+            "mode": "value",
+            "pattern": "客户[名称]?[改为为调]?\\s*(\\S+)"
+        }
+    },
+    "prop": {
+        "上电模式": {
+            "file": "ctvbuild.prop",
+            "key": "ro.product.powermode",
+            "value_map": {
+                "待机": "secondary",
+                "开机": "direct",
+                "记忆": "memory"
+            }
+        },
+        "开机模式": {
+            "file": "ctvbuild.prop",
+            "key": "persist.sys.bootanimation.type",
+            "value_map": {
+                "动画": "0",
+                "视频": "1"
+            }
+        }
+    },
+    "ctv_data": {
+        "开机桌面": {
+            "name": "BootDesktop",
+            "value_map": {
+                "安卓": "0",
+                "TV": "1",
+                "记忆": "2"
+            }
+        },
+        "菜单显示时间": {
+            "name": "MenuShowTime",
+            "value_map": {
+                "一直显示": "0",
+                "5秒": "1",
+                "10秒": "2",
+                "20秒": "3",
+                "30秒": "4",
+                "60秒": "5"
+            }
+        },
+        "语言显示": {
+            "name": "LanguageShowCountry",
+            "value_map": {
+                "带国家": "true",
+                "不带国家": "false"
+            }
+        },
+        "虚假信息显示": {
+            "name": "FakeInfoEnable",
+            "value_map": {
+                "打开": "true",
+                "关闭": "false"
+            }
+        }
+    },
+    "ctv_data_ensure": [
+        {
+            "name": "FakeInfoEnable",
+            "default_value": "true",
+            "after_name": "VideoBreakpointDialogEnable"
+        }
+    ],
+    "ctv_setting_menu": {
+        "内核": "tv kernel",
+        "sdk": "tv sdk",
+        "分辨率": "tv resolution",
+        "软件": "tv software",
+        "硬件": "tv hardware",
+        "型号": "tv model",
+        "蓝牙": "tv bluetooth"
+    }
+}

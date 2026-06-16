@@ -1,0 +1,64 @@
+{
+  "rules": [
+    {
+      "id": "example001",
+      "name": "修改开机Logo路径",
+      "keywords": "开机Logo,boot logo,BootLogo",
+      "rule_type": "db_ini",
+      "params": {
+        "file": "db.ini",
+        "key": "BootLogo",
+        "value": "/custom/boot_logo.png"
+      }
+    },
+    {
+      "id": "example002",
+      "name": "添加WiFi白名单",
+      "keywords": "WiFi白名单,wifi whitelist",
+      "rule_type": "whitelist",
+      "params": {
+        "package": "com.example.wifi",
+        "action": "add"
+      }
+    },
+    {
+      "id": "example003",
+      "name": "设置默认语言为中文",
+      "keywords": "默认中文,中文语言,Chinese language",
+      "rule_type": "language_first",
+      "params": {
+        "target": "zh-Hans-CN"
+      }
+    },
+    {
+      "name": "预装应用",
+      "keywords": "预装,preinstall",
+      "rule_type": "preinstall",
+      "params": {
+        "app": "tvcda",
+        "enabled": "true"
+      },
+      "id": "4597fd93e98f"
+    },
+    {
+      "name": "默认音量修改",
+      "keywords": "默认音量",
+      "rule_type": "prop",
+      "params": {
+        "file": "ctvbuild.prop",
+        "key": "ro.config.media_vol_default"
+      }
+    },
+    {
+      "name": "属性：驱动",
+      "keywords": "驱动",
+      "rule_type": "prop",
+      "params": {
+        "file": "ctvbuild.prop",
+        "key": "ro.product.devicetype",
+        "value": "公版→1 / 客制化→2 / 工厂→3"
+      },
+      "id": "cfb57ffc004a"
+    }
+  ]
+}

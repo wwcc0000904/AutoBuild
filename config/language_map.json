@@ -1,0 +1,222 @@
+{
+  "en-GB": {
+    "name": "英语",
+    "country": "英国"
+  },
+  "ar-AE": {
+    "name": "阿拉伯语",
+    "country": "阿联酋"
+  },
+  "ar-SA": {
+    "name": "阿拉伯语",
+    "country": "沙特阿拉伯"
+  },
+  "az-Latn-AZ": {
+    "name": "阿塞拜疆语",
+    "country": "阿塞拜疆"
+  },
+  "be-BY": {
+    "name": "白俄罗斯语",
+    "country": "白俄罗斯"
+  },
+  "bg-BG": {
+    "name": "保加利亚语",
+    "country": "保加利亚"
+  },
+  "cs-CZ": {
+    "name": "捷克语",
+    "country": "捷克共和国"
+  },
+  "da-DK": {
+    "name": "丹麦语",
+    "country": "丹麦"
+  },
+  "de-CH": {
+    "name": "德语",
+    "country": "瑞士"
+  },
+  "de-DE": {
+    "name": "德语",
+    "country": "德国"
+  },
+  "el-GR": {
+    "name": "现代希腊语",
+    "country": "希腊"
+  },
+  "en-AU": {
+    "name": "英语",
+    "country": "澳大利亚"
+  },
+  "en-IE": {
+    "name": "英语",
+    "country": "爱尔兰"
+  },
+  "en-IN": {
+    "name": "英语",
+    "country": "印度"
+  },
+  "en-NZ": {
+    "name": "英语",
+    "country": "新西兰"
+  },
+  "en-SG": {
+    "name": "英语",
+    "country": "新加坡"
+  },
+  "es-ES": {
+    "name": "西班牙语",
+    "country": "西班牙"
+  },
+  "et-EE": {
+    "name": "爱沙尼亚语",
+    "country": "爱沙尼亚"
+  },
+  "fa-IR": {
+    "name": "波斯语",
+    "country": "伊朗"
+  },
+  "fi-FI": {
+    "name": "芬兰语",
+    "country": "芬兰"
+  },
+  "fr-FR": {
+    "name": "法语",
+    "country": "法国"
+  },
+  "ha-NG": {
+    "name": "豪萨语",
+    "country": "尼日利亚"
+  },
+  "hr-BA": {
+    "name": "克罗地亚语",
+    "country": "波斯尼亚"
+  },
+  "hr-HR": {
+    "name": "克罗地亚语",
+    "country": "克罗地亚"
+  },
+  "hu-HU": {
+    "name": "匈牙利语",
+    "country": "匈牙利"
+  },
+  "hy-AM": {
+    "name": "亚美尼亚语",
+    "country": "亚美尼亚"
+  },
+  "in-ID": {
+    "name": "印度尼西亚语",
+    "country": "印度尼西亚"
+  },
+  "is-IS": {
+    "name": "冰岛语",
+    "country": "冰岛"
+  },
+  "it-IT": {
+    "name": "意大利语",
+    "country": "意大利"
+  },
+  "iw-IL": {
+    "name": "希伯来语",
+    "country": "以色列"
+  },
+  "kk-KZ": {
+    "name": "哈萨克语",
+    "country": "哈萨克斯坦"
+  },
+  "ky-KG": {
+    "name": "吉尔吉斯语",
+    "country": "吉尔吉斯斯坦"
+  },
+  "lt-LT": {
+    "name": "立陶宛语",
+    "country": "立陶宛"
+  },
+  "lv-LV": {
+    "name": "拉脱维亚语",
+    "country": "拉脱维亚"
+  },
+  "mk-MK": {
+    "name": "马其顿语",
+    "country": "马其顿（前南斯拉夫共和国）"
+  },
+  "my-MM": {
+    "name": "缅甸语",
+    "country": "缅甸"
+  },
+  "nl-NL": {
+    "name": "荷兰语",
+    "country": "荷兰"
+  },
+  "nn-NO": {
+    "name": "挪威语",
+    "country": "挪威"
+  },
+  "pl-PL": {
+    "name": "波兰语",
+    "country": "波兰"
+  },
+  "pt-PT": {
+    "name": "葡萄牙语",
+    "country": "葡萄牙"
+  },
+  "ro-RO": {
+    "name": "罗马尼亚语",
+    "country": "罗马尼亚"
+  },
+  "ru-RU": {
+    "name": "俄语",
+    "country": "俄罗斯联邦"
+  },
+  "sk-SK": {
+    "name": "斯洛伐克语",
+    "country": "斯洛伐克"
+  },
+  "sl-SI": {
+    "name": "斯洛文尼亚语",
+    "country": "斯洛文尼亚"
+  },
+  "sq-AL": {
+    "name": "阿尔巴尼亚语",
+    "country": "阿尔巴尼亚"
+  },
+  "sr-Latn-RS": {
+    "name": "塞尔维亚语",
+    "country": "塞尔维亚"
+  },
+  "sv-SE": {
+    "name": "瑞典语",
+    "country": "瑞典"
+  },
+  "sw-TZ": {
+    "name": "斯瓦希里语",
+    "country": "坦桑尼亚"
+  },
+  "th-TH": {
+    "name": "泰语",
+    "country": "泰国"
+  },
+  "tk-TM": {
+    "name": "土库曼语",
+    "country": "土库曼斯坦"
+  },
+  "tr-TR": {
+    "name": "土耳其语",
+    "country": "土耳其"
+  },
+  "uk-UA": {
+    "name": "乌克兰语",
+    "country": "乌克兰"
+  },
+  "vi-VN": {
+    "name": "越南语",
+    "country": "越南"
+  },
+  "ms-MY": {
+    "name": "马来语",
+    "country": "马来西亚"
+  },
+  "zh-Hans-CN": {
+    "name": "中文简体",
+    "country": "中国大陆"
+  }
+}
