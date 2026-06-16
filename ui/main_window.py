@@ -1219,7 +1219,9 @@ class MainWindow(QMainWindow):
             if segments:
                 order_args = " " + " ".join(segments)
 
-        return f"cd {code_dir} && ctvbuild all -o{order_args}"
+        # 设置 EXACT_MATCH=1 让 select_dialog 精确匹配目录，避免 atv 命中 atv_ntsc
+        # EXACT_MATCH=1 让 select_dialog 精确匹配目录名，避免 atv 命中 atv_ntsc
+        return f"cd {code_dir} && EXACT_MATCH=1 ctvbuild all -o{order_args}"
 
     def eventFilter(self, obj, event):
         """拦截日志框的键盘事件，发送到 shell。"""
