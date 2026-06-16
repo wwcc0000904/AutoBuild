@@ -1355,7 +1355,10 @@ class MainWindow(QMainWindow):
 
     def _on_start_build(self) -> None:
         try:
-            cmd = self._build_cmd_input.text().strip() or self._build_default_compile_command()
+            # 总是重新生成编译命令，确保路径后缀（如 -01）正确
+            # 用户可手动修改输入框，但每次编译会刷新
+            cmd = self._build_default_compile_command()
+            self._build_cmd_input.setText(cmd)
 
             self._build_log.clear()
             self._build_btn.setEnabled(False)
