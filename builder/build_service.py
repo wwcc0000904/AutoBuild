@@ -167,6 +167,20 @@ class BuildService:
         log_file = f"/tmp/{session_name}.log"
         marker = f"CTV_BUILD_DONE_{task_id}"
         prompt_key = self._current.default_prompt_key if self._current else "1"
+        # 从命令中提取订单名（最后一个参数），用于精确应答选单
+        import shlex as _shlex2
+        try:
+            parts = _shlex2.split(command)
+            # 找到 ctvbuild 后面的参数
+            if "ctvbuild" in parts:
+                idx = parts.index("ctvbuild")
+                args = parts[idx+1:]
+                # 跳过 all 和 -o
+                args = [a for a in args if a not in ("all", "-o")]
+                if args:
+                    exact_order = args[-1]  # 最后一个参数是订单名
+        except Exception:
+            exact_order = None
 
         # 包装命令：写到临时脚本文件执行，避免 shell 注入
         import shlex as _shlex
@@ -232,7 +246,9 @@ class BuildService:
                         # 自动应答选单
                         if not prompt_sent and self._current.log.rstrip().endswith("请输入字母或方括号的数字选择："):
                             prompt_sent = True
-                            self._exec(f"tmux send-keys -t {session_name} '{prompt_key}' Enter")
+                            # 优先用精确订单名应答，回退到 prompt_key
+                            answer = exact_order if exact_order else prompt_key
+                            self._exec(f"tmux send-keys -t {session_name} '{answer}' Enter")
                 except Exception:
                     pass  # 超时无数据，继续轮询
 
