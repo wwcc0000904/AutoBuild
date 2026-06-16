@@ -1219,7 +1219,6 @@ class MainWindow(QMainWindow):
             if segments:
                 order_args = " " + " ".join(segments)
 
-        # 设置 EXACT_MATCH=1 让 select_dialog 精确匹配目录，避免 atv 命中 atv_ntsc
         # EXACT_MATCH=1 让 select_dialog 精确匹配目录名，避免 atv 命中 atv_ntsc
         return f"cd {code_dir} && EXACT_MATCH=1 ctvbuild all -o{order_args}"
 
