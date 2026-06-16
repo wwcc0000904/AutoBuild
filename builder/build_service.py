@@ -39,11 +39,17 @@ class BuildJobHandle:
         self._lock = threading.Lock()
         self.default_prompt_key: str | None = None
 
+    _MAX_LOG_SIZE = 2 * 1024 * 1024  # 2MB 上限
+
     def append_log(self, text: str) -> None:
         if not text:
             return
         with self._lock:
             self.log += text
+            # 防止日志无限增长：超过上限时截断前半部分
+            if len(self.log) > self._MAX_LOG_SIZE:
+                half = len(self.log) // 2
+                self.log = f"... [日志截断，前 {half} 字节已省略] ..." + self.log[half:]
         if self._on_log:
             try:
                 self._on_log(text)
@@ -136,8 +142,18 @@ class BuildService:
     def _exec(self, cmd: str) -> tuple[int, str, str]:
         """在远程执行一条命令，返回 (exit_code, stdout, stderr)。"""
         stdin, stdout, stderr = self._ssh.exec_command(cmd)
-        exit_code = stdout.channel.recv_exit_status()
-        return exit_code, stdout.read().decode("utf-8", errors="replace"), stderr.read().decode("utf-8", errors="replace")
+        try:
+            exit_code = stdout.channel.recv_exit_status()
+            out = stdout.read().decode("utf-8", errors="replace")
+            err = stderr.read().decode("utf-8", errors="replace")
+            return exit_code, out, err
+        finally:
+            try:
+                stdin.close()
+                stdout.close()
+                stderr.close()
+            except Exception:
+                pass
 
     def _run_build(self, task_id: str, command: str, cancel_event: threading.Event) -> None:
         if not self._ssh:
@@ -152,12 +168,23 @@ class BuildService:
         marker = f"CTV_BUILD_DONE_{task_id}"
         prompt_key = self._current.default_prompt_key if self._current else "1"
 
-        # 包装命令：在 tmux 里跑，输出写日志文件，结尾打标记
-        inner = (
-            f"({command}) 2>&1 | tee {log_file}; "
-            f"echo '{marker}:'$? >> {log_file}"
+        # 包装命令：写到临时脚本文件执行，避免 shell 注入
+        import shlex as _shlex
+        script_file = f"/tmp/{session_name}.sh"
+        script_content = (
+            f"#!/bin/bash\n"
+            f"({command}) 2>&1 | tee {log_file}\n"
+            f"echo '{marker}:'$? >> {log_file}\n"
         )
-        tmux_cmd = f"tmux kill-session -t {session_name} 2>/dev/null; tmux new-session -d -s {session_name} \"{inner}\""
+        # 用 base64 传递脚本内容，避免转义问题
+        import base64 as _b64
+        encoded = _b64.b64encode(script_content.encode()).decode()
+        setup_cmd = f"echo {encoded} | base64 -d > {script_file} && chmod +x {script_file}"
+        tmux_cmd = (
+            f"tmux kill-session -t {session_name} 2>/dev/null; "
+            f"{setup_cmd}; "
+            f"tmux new-session -d -s {session_name} {script_file}"
+        )
 
         try:
             # 启动 tmux 会话
@@ -241,10 +268,15 @@ class BuildService:
                 pass
 
             # 清理
-            self._exec(f"rm -f {log_file}; tmux kill-session -t {session_name} 2>/dev/null")
+            self._exec(f"rm -f {log_file} {script_file}; tmux kill-session -t {session_name} 2>/dev/null")
 
         except Exception as e:  # noqa: BLE001
             if self._current and self._current.task_id == task_id:
                 self._current.status = "failed"
                 self._current.error = str(e)
                 self._current.append_log(f"\n编译失败: {e}\n")
+            # 清理残留 tmux 会话
+            try:
+                self._exec(f"tmux kill-session -t {session_name} 2>/dev/null")
+            except Exception:
+                pass

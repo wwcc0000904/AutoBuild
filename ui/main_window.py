@@ -99,6 +99,7 @@ class _LogEmitter(QObject):
     """线程安全的日志信号发射器。"""
     log_received = Signal(str)
     finished = Signal(str, int)  # status, exit_code
+    completion_result = Signal(str)  # Tab 补全结果
 
 
 class MainWindow(QMainWindow):
@@ -140,6 +141,7 @@ class MainWindow(QMainWindow):
         self._log_emitter = _LogEmitter(self)
         self._log_emitter.log_received.connect(self._on_build_log_append)
         self._log_emitter.finished.connect(self._on_build_finished)
+        self._log_emitter.completion_result.connect(self._on_completion_result)
 
         # 持久化 shell 会话
         self._shell_channel = None
@@ -166,7 +168,7 @@ class MainWindow(QMainWindow):
 
 
         self.setStyleSheet(f"""
-            QMainWindow {{ background: {self.CLR_BG}; background-image: url(/home/user/Documents/软件输出自动化/static/bg_frosted.png); background-position: center; }}
+            QMainWindow {{ background: {self.CLR_BG}; background-image: url(static/bg_frosted.png); background-position: center; }}
             QWidget {{ color: {self.CLR_TEXT}; font-size: 12px; background: transparent; }}
             QLabel {{ color: {self.CLR_TEXT}; background: transparent; }}
             QGroupBox {{ color: {self.CLR_TEXT}; background: transparent; }}
@@ -1300,6 +1302,8 @@ class MainWindow(QMainWindow):
             self._shell_running = True
             # pyte 终端模拟器
             import pyte
+            import threading as _th
+            self._term_lock = _th.Lock()
             self._term_screen = pyte.Screen(self._term_cols, self._term_rows)
             self._term_stream = pyte.Stream(self._term_screen)
             # 后台读取输出
@@ -1321,7 +1325,8 @@ class MainWindow(QMainWindow):
                 if ch.recv_ready():
                     data = ch.recv(8192).decode("utf-8", errors="replace")
                     if data:
-                        self._term_stream.feed(data)
+                        with self._term_lock:
+                            self._term_stream.feed(data)
                         dirty = True
                         last_time = time.monotonic()
                 elif dirty and (time.monotonic() - last_time) > 0.08:
@@ -1388,6 +1393,20 @@ class MainWindow(QMainWindow):
             self._shell_channel.send(cmd + "\n")
         else:
             self._build_log.append("[错误] shell 会话未建立")
+
+    def _on_completion_result(self, result: str) -> None:
+        """Tab 补全结果回调（主线程）。"""
+        if result.startswith("__TAB__"):
+            new_cmd = result[7:]
+            cursor = self._build_log.textCursor()
+            cursor.setPosition(self._shell_input_pos)
+            cursor.movePosition(cursor.MoveOperation.EndOfLine, cursor.MoveMode.KeepAnchor)
+            cursor.insertText(new_cmd)
+            self._shell_input_pos = self._build_log.document().characterCount() - len(new_cmd)
+            cursor.movePosition(cursor.MoveOperation.End)
+            self._build_log.setTextCursor(cursor)
+        elif result.startswith("__STATUS__"):
+            self._completion_label.setText(result[10:])
 
     def _on_terminal_tab(self) -> None:
         """终端区 Tab 补全（后台线程执行，避免阻塞 UI）。"""
@@ -1609,8 +1628,11 @@ class MainWindow(QMainWindow):
         if text == "__TERM__":
             try:
                 import re as _re2
-                screen = self._term_screen
-                all_lines = screen.display
+                with self._term_lock:
+                    screen = self._term_screen
+                    all_lines = list(screen.display)
+                    cursor_y = screen.cursor.y
+                    cursor_x = screen.cursor.x
                 filtered = []
                 for line in all_lines:
                     if _re2.match(r'^\[\d+\]\s+\d+:', line.strip()):
@@ -1621,8 +1643,8 @@ class MainWindow(QMainWindow):
                 display_text = "\n".join(filtered)
                 if display_text:
                     self._build_log.setPlainText(display_text)
-                cursor_row = screen.cursor.y
-                cursor_col = screen.cursor.x
+                cursor_row = cursor_y
+                cursor_col = cursor_x
                 doc = self._build_log.document()
                 block = doc.findBlockByLineNumber(min(cursor_row, doc.blockCount() - 1))
                 if block.isValid():

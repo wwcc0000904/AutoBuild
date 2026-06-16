@@ -81,7 +81,7 @@ class LoginDialog(QDialog):
         self.setWindowTitle("软件输出自动化 — 登录")
         self.setFixedSize(580, 410)
         self.setStyleSheet(
-            "QDialog { background: #ffffff; background-image: url(/home/user/Documents/软件输出自动化/static/bg_frosted.png); background-position: center; }"
+            "QDialog { background: #ffffff; background-image: url(static/bg_frosted.png); background-position: center; }"
         )
 
         layout = QVBoxLayout(self)
@@ -253,22 +253,43 @@ class LoginDialog(QDialog):
             self._user_input.setText(username)
 
         self._remember_pwd_cb.setChecked(bool(remember_pwd))
-        if remember_pwd and password:
-            self._pwd_input.setText(str(password))
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(200, self._on_login)
+        if remember_pwd:
+            # 优先从钥匙串读取密码
+            pwd = ""
+            try:
+                import keyring
+                pwd = keyring.get_password("CtvAuto", username) or ""
+            except Exception:
+                pass
+            if not pwd:
+                pwd = str(password)  # 回退到 QSettings
+            if pwd:
+                self._pwd_input.setText(pwd)
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(200, self._on_login)
 
     def _save_settings(self) -> None:
-        """保存登录信息，按选择决定是否保存密码。"""
+        """保存登录信息，密码存到系统钥匙串。"""
         self._settings.setValue("login/host", self._host_input.text().strip())
         self._settings.setValue("login/port", self._port_input.text().strip())
         self._settings.setValue("login/username", self._user_input.text().strip())
         self._settings.setValue("login/remember_password", self._remember_pwd_cb.isChecked())
 
-        if self._remember_pwd_cb.isChecked():
-            self._settings.setValue("login/password", self._pwd_input.text())
-        else:
-            self._settings.remove("login/password")
+        try:
+            import keyring
+            if self._remember_pwd_cb.isChecked():
+                keyring.set_password("CtvAuto", self._user_input.text().strip(), self._pwd_input.text())
+            else:
+                try:
+                    keyring.delete_password("CtvAuto", self._user_input.text().strip())
+                except Exception:
+                    pass
+        except Exception:
+            # keyring 不可用时回退到 QSettings（不推荐）
+            if self._remember_pwd_cb.isChecked():
+                self._settings.setValue("login/password", self._pwd_input.text())
+            else:
+                self._settings.remove("login/password")
 
     def get_ssh_client(self):
         return self._ssh_client
