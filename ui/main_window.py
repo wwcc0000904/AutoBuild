@@ -1200,7 +1200,7 @@ class MainWindow(QMainWindow):
         target_path = str(self._get_target_path())
         marker = "/code/cultraview/cusConfig"
         if marker in target_path:
-            return target_path.split(marker, 1)[0] + "/code"
+            return target_path.split(marker, 1)[0] + "/code/cultraview"
         return target_path
 
     def _build_default_compile_command(self) -> str:
