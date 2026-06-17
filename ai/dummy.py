@@ -37,11 +37,10 @@ def _load_language_map() -> dict[str, dict]:
     return _LANGUAGE_MAP
 
 
-CUSTOMER_DIR = Path("/home/user/Desktop/SXWDD_CV352-B55-20_NOCI_EsharePlus")
-
-
-def _check_country_in_list(country_code: str) -> bool:
-    xml_path = CUSTOMER_DIR / "overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+def _check_country_in_list(country_code: str, project_root: Path | None = None) -> bool:
+    if project_root is None:
+        return False
+    xml_path = project_root / "overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
     if not xml_path.exists():
         return False
     content = xml_path.read_text(encoding="utf-8")

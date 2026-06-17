@@ -56,7 +56,6 @@ class TabLineEdit(QLineEdit):
         from PySide6.QtCore import Qt
         if event.key() == Qt.Key_Tab:
             text = self.text()
-            print(f"[TabLineEdit] Tab 按下, text='{text}'", flush=True)
             if self._tab_callback and text:
                 self._tab_callback(text)
             event.accept()
@@ -87,7 +86,6 @@ class TerminalTextEdit(QTextEdit):
     def keyPressEvent(self, event):
         from PySide6.QtCore import Qt
         if event.key() == Qt.Key_Tab:
-            print("[TerminalTextEdit] Tab pressed", flush=True)
             if self._tab_callback:
                 self._tab_callback()
             event.accept()
@@ -514,22 +512,18 @@ class MainWindow(QMainWindow):
 
             lib_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                                     "static", "libmac_titlebar.dylib")
-            print(f"[mac_style] 加载 dylib: {lib_path}", flush=True)
             lib = ctypes.cdll.LoadLibrary(lib_path)
 
             # 获取 NSWindow 指针: winId() -> NSView -> .window -> NSWindow
             from ui.mac_blur import _msg
             ns_view = ctypes.c_void_p(int(self.winId()))
             ns_win = _msg(ns_view, "window")
-            print(f"[mac_style] NSWindow 指针: {ns_win}", flush=True)
             if not ns_win:
-                print("[mac_style] ❌ NSWindow 为空", flush=True)
                 return
 
             # fix_titlebar(ns_window_ptr) — 透明标题栏 + 全尺寸内容 + 隐藏标题
             lib.fix_titlebar.argtypes = [ctypes.c_void_p]
             lib.fix_titlebar(ns_win)
-            print("[mac_style] ✅ fix_titlebar 调用成功", flush=True)
 
             self._mac_styled = True
         except Exception as e:
@@ -1508,11 +1502,9 @@ class MainWindow(QMainWindow):
         import shlex
         import os
 
-        print(f"[Tab补全] 输入: '{text}'", flush=True)
 
         parts = text.rstrip().split()
         if not parts:
-            print("[Tab补全] 空输入，跳过", flush=True)
             return
 
         last_word = parts[-1]
@@ -1542,12 +1534,10 @@ class MainWindow(QMainWindow):
                         f"compgen -ac -- {shlex.quote(last_word)} 2>/dev/null | head -10) | sort -u | head -20"
                     )
 
-            print(f"[Tab补全] SSH命令: {ssh_cmd}", flush=True)
 
             _, stdout, _ = self._ssh_client.exec_command(ssh_cmd, timeout=5)
             candidates = [line.strip() for line in stdout.readlines() if line.strip()]
 
-            print(f"[Tab补全] 候选数: {len(candidates)}, 前5个: {candidates[:5]}", flush=True)
 
             if not candidates:
                 self._completion_label.setText(f"无匹配: {last_word}")
@@ -1563,14 +1553,12 @@ class MainWindow(QMainWindow):
                         f"test -d {shlex.quote(check_path)} && echo DIR || echo NOTDIR", timeout=3
                     )
                     kind = st_out.read().decode().strip()
-                    print(f"[Tab补全] 类型检查: {check_path} → {kind}", flush=True)
                     if kind == "DIR" and not completed.endswith("/"):
                         completed += "/"
 
                 new_text = " ".join(prefix_words + [completed]) if prefix_words else completed
                 self._build_input.setText(new_text)
                 self._completion_label.setText(f"✓ {completed}")
-                print(f"[Tab补全] 完成: '{new_text}'", flush=True)
 
             elif len(candidates) > 1:
                 common = os.path.commonprefix(candidates)
@@ -1583,12 +1571,9 @@ class MainWindow(QMainWindow):
                 if common and common != last_word:
                     new_text = " ".join(prefix_words + [common]) if prefix_words else common
                     self._build_input.setText(new_text)
-                    print(f"[Tab补全] 公共前缀: '{common}'，更新: '{new_text}'", flush=True)
                 else:
-                    print(f"[Tab补全] 多候选但无公共前缀", flush=True)
 
         except Exception as e:
-            print(f"[Tab补全] 异常: {e}", flush=True)
             self._completion_label.setText(f"[错误] {e}")
 
     def _on_build_input_send(self) -> None:
@@ -1823,24 +1808,24 @@ class MainWindow(QMainWindow):
         else:
             lines.append("📝 无文件被修改")
 
-            self._result_detail.setPlainText("\n".join(lines))
-            self._stack.setCurrentIndex(3)
+        self._result_detail.setPlainText("\n".join(lines))
+        self._stack.setCurrentIndex(3)
 
-            # 手动执行完成后自动提交编译（重新读取目标目录输入框的值）
-            try:
-                fresh_target = self._get_target_path()
-                build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
-                self._build_service._external_on_log = self._log_emitter.log_received.emit
-                build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
-                self._build_service.set_prompt_key("1")
-                self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
-                self._build_btn.setEnabled(False)
-                self._cancel_build_btn.setEnabled(True)
-                self._build_btn.setText("编译中…")
-                from PySide6.QtCore import QTimer as _QTimer2
-                _QTimer2.singleShot(1200, lambda: self._switch_mode(4))
-            except Exception as e:
-                self._build_log.append(f"[错误] 自动提交编译失败: {e}")
+        # 手动执行完成后自动提交编译（重新读取目标目录输入框的值）
+        try:
+            fresh_target = self._get_target_path()
+            build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
+            self._build_service._external_on_log = self._log_emitter.log_received.emit
+            build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
+            self._build_service.set_prompt_key("1")
+            self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
+            self._build_btn.setEnabled(False)
+            self._cancel_build_btn.setEnabled(True)
+            self._build_btn.setText("编译中…")
+            from PySide6.QtCore import QTimer as _QTimer2
+            _QTimer2.singleShot(1200, lambda: self._switch_mode(4))
+        except Exception as e:
+            self._build_log.append(f"[错误] 自动提交编译失败: {e}")
 
     # ========== 执行任务（AI 模式）==========
 
