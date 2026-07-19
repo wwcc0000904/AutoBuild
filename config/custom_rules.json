@@ -3,7 +3,10 @@
     {
       "id": "example002",
       "name": "添加WiFi白名单",
-      "keywords": "WiFi白名单,wifi whitelist",
+      "keywords": [
+        "WiFi白名单",
+        "wifi whitelist"
+      ],
       "rule_type": "whitelist",
       "params": {
         "package": "com.example.wifi",
@@ -13,7 +16,11 @@
     {
       "id": "example003",
       "name": "设置默认语言为中文",
-      "keywords": "默认中文,中文语言,Chinese language",
+      "keywords": [
+        "默认中文",
+        "中文语言",
+        "Chinese language"
+      ],
       "rule_type": "language_first",
       "params": {
         "target": "zh-Hans-CN"
@@ -21,7 +28,10 @@
     },
     {
       "name": "预装应用",
-      "keywords": "预装,preinstall",
+      "keywords": [
+        "预装",
+        "preinstall"
+      ],
       "rule_type": "preinstall",
       "params": {
         "app": "ESharePlus",
@@ -31,7 +41,9 @@
     },
     {
       "name": "默认音量修改",
-      "keywords": "默认音量",
+      "keywords": [
+        "默认音量"
+      ],
       "rule_type": "prop",
       "params": {
         "file": "ctvbuild.prop",
@@ -41,7 +53,9 @@
     },
     {
       "name": "属性：驱动",
-      "keywords": "驱动",
+      "keywords": [
+        "驱动"
+      ],
       "rule_type": "prop",
       "params": {
         "file": "ctvbuild.prop",

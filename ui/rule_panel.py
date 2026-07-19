@@ -1,16 +1,154 @@
-"""规则管理面板 —— 展示所有已实现的修改规则，支持复制为自定义规则。"""
+"""规则管理面板 —— 方块卡片网格布局，点击展开详情。"""
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QComboBox, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QFormLayout, QGroupBox, QListView,
-    QScrollArea,
+    QPushButton, QComboBox, QFormLayout, QGroupBox, QListView,
+    QScrollArea, QDialog, QSizePolicy, QLayout, QLayoutItem, QTextEdit,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize, QRect, QPoint, QPropertyAnimation, QEasingCurve
 
 from rules.custom_rule_manager import load_rules, save_rule, delete_rule
+
+
+# ── FlowLayout：流式布局（Qt 官方示例移植）──────────────────
+class FlowLayout(QLayout):
+    """按行排列子 widget，超出宽度自动换行。"""
+
+    def __init__(self, parent=None, margin=0, h_spacing=10, v_spacing=10):
+        super().__init__(parent)
+        self.setContentsMargins(margin, margin, margin, margin)
+        self._h_space = h_spacing
+        self._v_space = v_spacing
+        self._items: list[QLayoutItem] = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, test_only: bool) -> int:
+        m = self.contentsMargins()
+        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = effective.x()
+        y = effective.y()
+        line_h = 0
+
+        for item in self._items:
+            wid = item.widget()
+            if wid and not wid.isVisible():
+                continue
+            space_x = self._h_space
+            space_y = self._v_space
+            next_x = x + item.sizeHint().width() + space_x
+            if next_x - space_x > effective.right() + 1 and line_h > 0:
+                x = effective.x()
+                y = y + line_h + space_y
+                next_x = x + item.sizeHint().width() + space_x
+                line_h = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+            x = next_x
+            line_h = max(line_h, item.sizeHint().height())
+
+        return y + line_h - rect.y() + m.bottom()
+
+
+class _FlowLayoutContainer(QWidget):
+    """支持 heightForWidth 的容器，让 FlowLayout 在 QVBoxLayout 中正确工作。"""
+
+    def __init__(self, flow_layout: FlowLayout, parent=None):
+        super().__init__(parent)
+        self._flow = flow_layout
+        self.setLayout(flow_layout)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._flow.heightForWidth(width)
+
+
+# ── 规则类型图标映射 ──────────────────────────────────────
+_RULE_TYPE_ICONS = {
+    "build_config": ("fa5s.cogs", "#4a90d9"),
+    "prop": ("fa5s.file-code", "#8e44ad"),
+    "ctv_data": ("fa5s.database", "#e67e22"),
+    "db_ini": ("fa5s.sliders-h", "#27ae60"),
+    "whitelist": ("fa5s.list-ul", "#e74c3c"),
+    "preinstall": ("fa5s.box", "#f39c12"),
+    "country_list_first": ("fa5s.globe-americas", "#1abc9c"),
+    "language_first": ("fa5s.language", "#3498db"),
+    "language_add": ("fa5s.plus-circle", "#3498db"),
+    "color_temp": ("fa5s.palette", "#9b59b6"),
+    "nla": ("fa5s.chart-line", "#2ecc71"),
+    "gain": ("fa5s.signal", "#e67e22"),
+    "ctv_setting": ("fa5s.toggle-on", "#34495e"),
+}
+
+# ── 规则类型中文标签 ──────────────────────────────────────
+_TYPE_LABELS = {
+    "build_config": "Build Config",
+    "prop": "属性",
+    "ctv_data": "CTV Data",
+    "db_ini": "DB INI",
+    "whitelist": "白名单",
+    "preinstall": "预装",
+    "country_list_first": "国家",
+    "language_first": "语言置顶",
+    "language_add": "添加语言",
+    "color_temp": "色温",
+    "nla": "NLA",
+    "gain": "增益",
+    "ctv_setting": "菜单开关",
+}
+
+
+def _get_rule_icon(rule_type: str) -> tuple[str, str]:
+    return _RULE_TYPE_ICONS.get(rule_type, ("fa5s.cog", "#888888"))
+
+
+def _get_type_label(rule_type: str) -> str:
+    return _TYPE_LABELS.get(rule_type, rule_type)
 
 # ── 所有已实现的规则定义 ─────────────────────────────────
 ALL_RULES = [
@@ -434,6 +572,551 @@ ALL_RULES = [
 ]
 
 
+# ── 规则名 → feature_mapping.json 关键词路径 ──────────────
+_RULE_KW_PATH: dict[str, str] = {
+    # 国家/语言
+    "国家列表置顶":        "country",
+    "默认语言 (置顶)":    "language",
+    "添加语言":           "language",
+    # 开关
+    "功能开关：HBG":       "open.HBG",
+    "功能开关：TVcasting": "open.TVcasting",
+    "功能开关：eshare":    "open.eshare",
+    "功能开关：miracast":  "open.miracast",
+    "功能开关：杜比":      "open.杜比",
+    "功能开关：蓝屏":      "open.蓝屏",
+    # 参数
+    "参数修改：电流":      "param.电流",
+    "参数修改：客户":      "param.客户",
+    # 属性
+    "属性：上电模式":      "prop.上电模式",
+    "属性：开机模式":      "prop.开机模式",
+    # CTV Data
+    "CTV Data：开机桌面":       "ctv_data.开机桌面",
+    "CTV Data：菜单显示时间":    "ctv_data.菜单显示时间",
+    "CTV Data：语言显示":        "ctv_data.语言显示",
+    "CTV Data：虚假信息显示":    "ctv_data.虚假信息显示",
+    # 菜单开关
+    "菜单开关：内核":      "ctv_setting_menu.内核",
+    "菜单开关：sdk":       "ctv_setting_menu.sdk",
+    "菜单开关：分辨率":    "ctv_setting_menu.分辨率",
+    "菜单开关：软件":      "ctv_setting_menu.软件",
+    "菜单开关：硬件":      "ctv_setting_menu.硬件",
+    "菜单开关：型号":      "ctv_setting_menu.型号",
+    # 通用规则（存到 keywords.xxx）
+    "DB INI 修改":        "keywords.db_ini",
+    "属性修改 (prop)":    "keywords.prop",
+    "Build Config 修改":  "keywords.build_config",
+    "CTV Data 修改":      "keywords.ctv_data",
+    "CTV Data Ensure":    "keywords.ctv_data_ensure",
+    "白名单添加":         "keywords.whitelist_add",
+    "白名单移除":         "keywords.whitelist_remove",
+    "预装应用":           "keywords.preinstall",
+    "色温调整 (白平衡)":  "keywords.color_temp",
+    "NLA 参数 (OSD曲线)": "keywords.nla",
+    "Color Space 增益":   "keywords.gain",
+}
+
+
+def _get_kw_path_for_rule(rule_name: str) -> str | None:
+    return _RULE_KW_PATH.get(rule_name)
+
+
+def _load_feature_mapping() -> dict:
+    p = Path("config/feature_mapping.json")
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return {}
+
+
+def _save_feature_mapping(data: dict) -> None:
+    p = Path("config/feature_mapping.json")
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
+
+
+def _resolve_keywords_from_path(mapping: dict, kw_path: str) -> list[str]:
+    """从 feature_mapping.json 中按路径读取关键词列表。"""
+    parts = kw_path.split(".")
+    node = mapping
+    for part in parts:
+        if isinstance(node, dict):
+            node = node.get(part, {})
+        else:
+            return []
+    # 有 keywords 数组 → 直接返回
+    if isinstance(node, dict) and "keywords" in node:
+        return list(node["keywords"])
+    # 节点是 dict 但没有 keywords → 尝试从 value_map key 或中文 key 推断
+    if isinstance(node, dict):
+        if "value_map" in node:
+            return list(node["value_map"].keys())
+        _skip = {"file", "key", "value", "mode", "pattern", "name", "value_map", "keywords"}
+        keys = [k for k in node.keys() if k not in _skip]
+        if keys:
+            return keys
+    # 节点是字符串（如 ctv_setting_menu.xxx → "tv kernel"）
+    if isinstance(node, str):
+        return [parts[-1]]
+    # 节点是列表
+    if isinstance(node, list):
+        return list(node)
+    # 节点不存在 → 返回空，用户可自行添加
+    return []
+
+
+def _save_keywords_to_path(mapping: dict, kw_path: str, keywords: list[str]) -> None:
+    """将关键词保存到 feature_mapping.json 对应路径。自动创建 keywords 数组。"""
+    parts = kw_path.split(".")
+    node = mapping
+    for part in parts[:-1]:
+        if part not in node:
+            node[part] = {}
+        node = node[part]
+    leaf = parts[-1]
+    target = node.get(leaf)
+    # 情况1: 目标是 dict → 给它加 keywords 字段
+    if isinstance(target, dict):
+        target["keywords"] = keywords
+        node[leaf] = target
+    # 情况2: 目标是字符串（如 ctv_setting_menu.xxx）→ 包一层 dict
+    elif isinstance(target, str):
+        node[leaf] = {"value": target, "keywords": keywords}
+    # 情况3: 目标不存在或为列表 → 直接存为 keywords 结构
+    else:
+        node[leaf] = {"keywords": keywords}
+
+
+
+
+# ── RuleCardWidget：小卡片 + 点击弹出浮层详情 ─────────────
+class RuleCardWidget(QWidget):
+    """小卡片 → 点击弹出浮层详情，不影响网格布局。"""
+
+    from PySide6.QtCore import Signal
+    copy_requested = Signal(dict)
+    edit_requested = Signal(dict)
+    delete_requested = Signal(dict)
+
+    COMPACT_W = 170
+    COMPACT_H = 90
+
+    def __init__(self, rule: dict, is_builtin: bool, parent=None):
+        super().__init__(parent)
+        self._rule = rule
+        self._is_builtin = is_builtin
+        self._overlay = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._build_compact()
+        self.setFixedSize(self.COMPACT_W, self.COMPACT_H)
+
+    # ── 紧凑卡片（始终不变）──
+    def _build_compact(self):
+        card = QWidget(self)
+        card.setStyleSheet(
+            "QWidget { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; }"
+            "QWidget:hover { border-color: #a0a0a0; background: #fafafa; }"
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(4)
+
+        rule_type = self._rule.get("rule_type", "")
+        icon_name, icon_color = _get_rule_icon(rule_type)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(16, 16))
+        icon_lbl.setStyleSheet("background: transparent;")
+        top_row.addWidget(icon_lbl)
+        type_lbl = QLabel(_get_type_label(rule_type))
+        type_lbl.setStyleSheet(f"font-size: 10px; color: {icon_color}; background: transparent; font-weight: bold;")
+        top_row.addWidget(type_lbl)
+        top_row.addStretch()
+        layout.addLayout(top_row)
+
+        name_lbl = QLabel(self._rule.get("name", ""))
+        name_lbl.setStyleSheet("font-size: 12px; font-weight: bold; color: #1a1a1a; background: transparent;")
+        name_lbl.setWordWrap(True)
+        layout.addWidget(name_lbl)
+
+        file_path = self._rule.get("file", "")
+        if file_path:
+            file_lbl = QLabel(file_path)
+            file_lbl.setStyleSheet("font-size: 10px; color: #aaa; background: transparent;")
+            file_lbl.setMaximumWidth(self.COMPACT_W - 24)
+            layout.addWidget(file_lbl)
+
+        card.setGeometry(0, 0, self.COMPACT_W, self.COMPACT_H)
+
+    # ── 点击弹出浮层 ──
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._show_overlay()
+        super().mousePressEvent(event)
+
+    def _show_overlay(self):
+        """在顶层窗口上弹出浮层详情。"""
+        # 找到顶层窗口
+        win = self.window()
+        if not win:
+            return
+        # 关闭已有浮层
+        if RuleCardWidget._active_overlay:
+            RuleCardWidget._active_overlay.close()
+            RuleCardWidget._active_overlay.deleteLater()
+            RuleCardWidget._active_overlay = None
+
+        overlay = _RuleDetailOverlay(self._rule, self._is_builtin, win)
+        # 信号穿透
+        overlay.copy_requested.connect(self.copy_requested)
+        overlay.edit_requested.connect(self.edit_requested)
+        overlay.delete_requested.connect(self.delete_requested)
+        overlay.show()
+        RuleCardWidget._active_overlay = overlay
+
+    # 类变量：当前活跃的浮层
+    _active_overlay: "_RuleDetailOverlay | None" = None
+
+
+class _RuleDetailOverlay(QWidget):
+    """半透明遮罩 + 居中详情卡片浮层。"""
+
+    from PySide6.QtCore import Signal
+    copy_requested = Signal(dict)
+    edit_requested = Signal(dict)
+    delete_requested = Signal(dict)
+
+    def __init__(self, rule: dict, is_builtin: bool, parent: QWidget):
+        super().__init__(parent)
+        self._rule = rule
+        self._is_builtin = is_builtin
+        self.setObjectName("ruleOverlay")
+        # 覆盖整个父窗口
+        self.setGeometry(parent.rect())
+        self.setStyleSheet("QWidget#ruleOverlay { background: rgba(0, 0, 0, 0.35); }")
+
+        # ── 居中详情卡片 ──
+        card_w, card_h = 560, 480
+        card = QWidget(self)
+        card.setObjectName("detailCard")
+        card.setStyleSheet(
+            "QWidget#detailCard { background: #ffffff; border: 14px; border-radius: 14px; }"
+        )
+        card_w = min(card_w, parent.width() - 80)
+        card_h = min(card_h, parent.height() - 60)
+        cx = (parent.width() - card_w) // 2
+        cy = (parent.height() - card_h) // 2
+        card.setGeometry(cx, cy, card_w, card_h)
+
+        root = QVBoxLayout(card)
+        root.setContentsMargins(20, 16, 20, 16)
+        root.setSpacing(8)
+
+        rule_type = rule.get("rule_type", "")
+        icon_name, icon_color = _get_rule_icon(rule_type)
+
+        # 标题行
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(20, 20))
+        icon_lbl.setStyleSheet("background: transparent;")
+        title_row.addWidget(icon_lbl)
+        name_lbl = QLabel(rule.get("name", ""))
+        name_lbl.setStyleSheet(f"font-size: 15px; font-weight: bold; color: #1a1a1a; background: transparent;")
+        title_row.addWidget(name_lbl, 1)
+        close_btn = QPushButton()
+        close_btn.setIcon(qta.icon("fa5s.times", color="#999"))
+        close_btn.setFixedSize(28, 28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; border-radius: 6px; }"
+            "QPushButton:hover { background: #f0f0f0; }"
+        )
+        close_btn.clicked.connect(self.close_and_cleanup)
+        title_row.addWidget(close_btn)
+        root.addLayout(title_row)
+
+        # 分隔线
+        sep = QLabel()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: #e8e8e8;")
+        root.addWidget(sep)
+
+        # 滚动区
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        body_lay = QVBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 4, 0)
+        body_lay.setSpacing(8)
+
+        # 描述
+        desc = rule.get("desc", "")
+        if desc:
+            lbl = QLabel(f"描述: {desc}")
+            lbl.setStyleSheet("font-size: 12px; color: #555; background: transparent;")
+            lbl.setWordWrap(True)
+            body_lay.addWidget(lbl)
+
+        # 触发条件
+        trigger = rule.get("trigger", "")
+        if trigger:
+            lbl = QLabel(f"触发: {trigger}")
+            lbl.setStyleSheet("font-size: 12px; color: #666; background: transparent;")
+            lbl.setWordWrap(True)
+            body_lay.addWidget(lbl)
+
+        # 参数
+        params = rule.get("params", {})
+        if params:
+            params_text = "  |  ".join(f"{k}={v}" for k, v in params.items() if v)
+            lbl = QLabel(f"参数: {params_text}")
+            lbl.setStyleSheet(
+                "font-size: 11px; color: #888; background: #f8f9fb; border: 1px solid #eee;"
+                " border-radius: 6px; padding: 4px 8px;"
+            )
+            lbl.setWordWrap(True)
+            body_lay.addWidget(lbl)
+
+        # 示例
+        example = rule.get("example", "")
+        if example:
+            t = QLabel("示例:")
+            t.setStyleSheet("font-size: 12px; font-weight: bold; color: #444; background: transparent;")
+            body_lay.addWidget(t)
+            lbl = QLabel(example)
+            lbl.setStyleSheet(
+                "font-size: 11px; color: #555; background: #fafafa; border: 1px solid #eee;"
+                " border-radius: 6px; padding: 6px 10px; font-family: Menlo, monospace;"
+            )
+            lbl.setWordWrap(True)
+            body_lay.addWidget(lbl)
+
+        # 触发关键词
+        if is_builtin:
+            rule_name = rule.get("name", "")
+            kw_path = _get_kw_path_for_rule(rule_name)
+            if kw_path:
+                fm = _load_feature_mapping()
+                current_kws = _resolve_keywords_from_path(fm, kw_path)
+
+                kw_header = QHBoxLayout()
+                kw_title = QLabel("触发关键词:")
+                kw_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #444; background: transparent;")
+                kw_header.addWidget(kw_title)
+                kw_header.addStretch()
+                body_lay.addLayout(kw_header)
+
+                self._kw_widget = KeywordListWidget()
+                self._kw_widget.set_keywords(current_kws)
+                body_lay.addWidget(self._kw_widget)
+                self._kw_path = kw_path
+
+        body_lay.addStretch()
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+
+        # 底部按钮
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+
+        if is_builtin:
+            rule_name = rule.get("name", "")
+            _kw_path = _get_kw_path_for_rule(rule_name)
+            if _kw_path:
+                save_kw_btn = QPushButton("  保存关键词")
+                save_kw_btn.setIcon(qta.icon("fa5s.save", color="#fff"))
+                save_kw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                save_kw_btn.setStyleSheet(
+                    "QPushButton { background: #4a90d9; color: #ffffff; border: none;"
+                    " border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: bold; }"
+                    "QPushButton:hover { background: #3a7bc8; }"
+                )
+                save_kw_btn.clicked.connect(self._save_keywords)
+                btn_row.addWidget(save_kw_btn)
+
+            copy_btn = QPushButton("  复制为自定义")
+            copy_btn.setIcon(qta.icon("fa5s.copy", color="#1a1a1a"))
+            copy_btn.setStyleSheet(_RuleCardWidget_btn_style())
+            copy_btn.clicked.connect(lambda: (self.copy_requested.emit(rule), self.close_and_cleanup()))
+            btn_row.addWidget(copy_btn)
+        else:
+            edit_btn = QPushButton("  编辑")
+            edit_btn.setIcon(qta.icon("fa5s.edit", color="#1a1a1a"))
+            edit_btn.setStyleSheet(_RuleCardWidget_btn_style())
+            edit_btn.clicked.connect(lambda: (self.edit_requested.emit(rule), self.close_and_cleanup()))
+            btn_row.addWidget(edit_btn)
+
+            copy_btn = QPushButton("  复制")
+            copy_btn.setIcon(qta.icon("fa5s.copy", color="#4a90d9"))
+            copy_btn.setStyleSheet(_RuleCardWidget_btn_secondary())
+            copy_btn.clicked.connect(lambda: (self.copy_requested.emit(rule), self.close_and_cleanup()))
+            btn_row.addWidget(copy_btn)
+
+            del_btn = QPushButton("  删除")
+            del_btn.setIcon(qta.icon("fa5s.trash-alt", color="#e17055"))
+            del_btn.setStyleSheet(_RuleCardWidget_btn_secondary())
+            del_btn.clicked.connect(lambda: (self.delete_requested.emit(rule), self.close_and_cleanup()))
+            btn_row.addWidget(del_btn)
+
+        root.addLayout(btn_row)
+
+    def close_and_cleanup(self):
+        RuleCardWidget._active_overlay = None
+        self.close()
+        self.deleteLater()
+
+    def _save_keywords(self):
+        if not hasattr(self, '_kw_widget') or not hasattr(self, '_kw_path'):
+            return
+        new_kws = self._kw_widget.get_keywords()
+        fm = _load_feature_mapping()
+        _save_keywords_to_path(fm, self._kw_path, new_kws)
+        _save_feature_mapping(fm)
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("已保存")
+        box.setText(f"关键词已更新，共 {len(new_kws)} 个，立即生效。")
+        box.setStyleSheet(
+            "QMessageBox { background: #ffffff; }"
+            "QMessageBox QLabel { color: #1a1a1a; background: transparent; }"
+            "QPushButton { background: #e0e0e0; color: #1a1a1a; border: none;"
+            " border-radius: 6px; padding: 6px 18px; }"
+        )
+        box.exec()
+
+    def mousePressEvent(self, event):
+        """点击遮罩区域关闭浮层。"""
+        # 检查点击是否在卡片区域外
+        for child in self.children():
+            if isinstance(child, QWidget) and child.objectName() == "detailCard":
+                if child.geometry().contains(event.position().toPoint()):
+                    return  # 点在卡片内，不关闭
+        self.close_and_cleanup()
+
+
+def _RuleCardWidget_btn_style():
+    return (
+        "QPushButton { background: #e0e0e0; color: #1a1a1a; border: none; "
+        "border-radius: 6px; padding: 6px 14px; font-size: 12px; }"
+        "QPushButton:hover { background: #d5d5d5; }"
+        "QPushButton:pressed { background: #cccccc; }"
+    )
+
+
+def _RuleCardWidget_btn_secondary():
+    return (
+        "QPushButton { background: transparent; color: #888888; border: 1px solid #dcdcdc; "
+        "border-radius: 6px; padding: 6px 14px; font-size: 12px; }"
+        "QPushButton:hover { background: #f0f0f0; }"
+    )
+
+
+class KeywordListWidget(QWidget):
+    """可增删的关键词列表组件：每行一个关键词 + 删除按钮，底部添加按钮。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rows: list[QLineEdit] = []
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        self._rows_layout = layout
+        # 底部添加按钮
+        self._add_btn = QPushButton("＋ 添加关键词")
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(
+            "QPushButton { background: #4a90d9; color: #ffffff; border: none;"
+            " border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background: #357abd; }"
+            "QPushButton:pressed { background: #2c6aa0; }"
+        )
+        self._add_btn.clicked.connect(lambda: self._add_row(""))
+        layout.addWidget(self._add_btn)
+        # 默认一行
+        self._add_row("")
+
+    def _add_row(self, text: str = "") -> None:
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        inp = QLineEdit()
+        inp.setText(text)
+        inp.setPlaceholderText("触发关键词")
+        inp.setStyleSheet(
+            "QLineEdit { background: #ffffff; border: 1px solid #dcdcdc;"
+            " border-radius: 6px; padding: 5px 10px; font-size: 12px; }"
+        )
+        del_btn = QPushButton("✕")
+        del_btn.setFixedSize(28, 28)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #e17055; border: none;"
+            " font-size: 14px; }"
+            "QPushButton:hover { color: #d63031; }"
+        )
+        idx = len(self._rows)
+        del_btn.clicked.connect(lambda _, i=idx: self._del_row(i))
+        row.addWidget(inp, 1)
+        row.addWidget(del_btn)
+        # 插入到添加按钮之前
+        self._rows_layout.insertLayout(self._rows_layout.count() - 1, row)
+        self._rows.append(inp)
+
+    def _del_row(self, idx: int) -> None:
+        if idx >= len(self._rows):
+            return
+        inp = self._rows.pop(idx)
+        # 移除对应的布局行
+        item = self._rows_layout.takeAt(idx)
+        if item and item.layout():
+            layout = item.layout()
+            while layout.count():
+                w = layout.takeAt(0).widget()
+                if w and w is not inp:
+                    w.deleteLater()
+            inp.deleteLater()
+        # 重新绑定剩余删除按钮的索引
+        self._rebind_del_buttons()
+
+    def _rebind_del_buttons(self) -> None:
+        """删除行后重新绑定删除按钮的索引。"""
+        for i in range(self._rows_layout.count() - 1):
+            item = self._rows_layout.itemAt(i)
+            if not item or not item.layout():
+                continue
+            hlayout = item.layout()
+            # 第二个 widget 是删除按钮
+            if hlayout.count() >= 2:
+                del_btn = hlayout.itemAt(1).widget()
+                if isinstance(del_btn, QPushButton):
+                    del_btn.clicked.disconnect()
+                    del_btn.clicked.connect(lambda _, i=i: self._del_row(i))
+
+    def set_keywords(self, keywords) -> None:
+        """设置关键词列表（接受 list 或逗号分隔字符串）。"""
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        elif keywords is None:
+            keywords = []
+        # 清空现有行
+        while self._rows:
+            self._del_row(0)
+        if not keywords:
+            self._add_row("")
+        else:
+            for kw in keywords:
+                self._add_row(kw)
+
+    def get_keywords(self) -> list[str]:
+        return [inp.text().strip() for inp in self._rows if inp.text().strip()]
+
+
 class RulePanel(QWidget):
     """规则管理页面：展示所有规则 + 自定义规则管理。"""
 
@@ -486,9 +1169,7 @@ class RulePanel(QWidget):
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("规则名称")
         self._name_input.setMinimumWidth(400)
-        self._keywords_input = QLineEdit()
-        self._keywords_input.setPlaceholderText("触发关键词，逗号分隔")
-        self._keywords_input.setMinimumWidth(400)
+        self._keywords_input = KeywordListWidget()
         self._type_combo = QComboBox()
         self._type_combo.setView(QListView())
         self._type_combo.setMinimumWidth(400)
@@ -542,20 +1223,65 @@ class RulePanel(QWidget):
             w = item.widget()
             if w:
                 w.deleteLater()
+            elif item.layout():
+                layout = item.layout()
+                while layout.count():
+                    child = layout.takeAt(0)
+                    cw = child.widget()
+                    if cw:
+                        cw.deleteLater()
 
-        # 内置规则标题
-        builtin_title = QLabel("📋 内置规则（已实现，共 {} 条）".format(len(ALL_RULES)))
-        builtin_title.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #1a1a1a; "
+        # 关闭已有浮层
+        RuleCardWidget._active_overlay = None
+
+        # ── 内置规则：按文件分组 ──
+        title = QLabel(f"📋 内置规则（共 {len(ALL_RULES)} 条）")
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #1a1a1a; "
             "padding: 6px 0; background: transparent;"
         )
-        self._list_layout.addWidget(builtin_title)
+        self._list_layout.addWidget(title)
 
-        # 内置规则卡片
+        # 保持顺序的分组
+        from collections import OrderedDict
+        file_groups: OrderedDict[str, list[dict]] = OrderedDict()
         for rule in ALL_RULES:
-            self._list_layout.addWidget(self._make_rule_card(rule, is_builtin=True))
+            f = rule.get("file", "其他")
+            file_groups.setdefault(f, []).append(rule)
 
-        # 自定义规则
+        # 文件名 → 图标 + 显示名
+        _FILE_META = {
+            "build_config.txt":              ("📄", "build_config.txt"),
+            "overlay/.../ctv_data.xml":      ("📋", "ctv_data.xml"),
+            "configs/ctvsetting.xml":        ("⚙️", "ctvsetting.xml"),
+            "configs/db.ini":                ("📊", "db.ini"),
+            "ctvbuild.prop":                 ("📝", "ctvbuild.prop"),
+            "etc/whiteList.conf":            ("📃", "whiteList.conf"),
+            "configs/CtvLanguage.ini":       ("🌐", "CtvLanguage.ini"),
+            "build_ctv_app.txt":             ("📦", "build_ctv_app.txt"),
+        }
+
+        for file_key, rules in file_groups.items():
+            icon, display_name = _FILE_META.get(file_key, ("📄", file_key))
+
+            # 文件分组标题
+            group_header = QLabel(f"{icon}  {display_name}  ({len(rules)} 条)")
+            group_header.setStyleSheet(
+                "font-size: 12px; font-weight: bold; color: #555; "
+                "padding: 8px 4px 2px 4px; background: transparent;"
+                " border-bottom: 1px solid #e8e8e8;"
+            )
+            self._list_layout.addWidget(group_header)
+
+            # 卡片网格
+            flow = FlowLayout(margin=0, h_spacing=10, v_spacing=10)
+            for rule in rules:
+                card = RuleCardWidget(rule, is_builtin=True)
+                card.copy_requested.connect(self._on_copy_builtin)
+                flow.addWidget(card)
+            self._list_layout.addWidget(_FlowLayoutContainer(flow))
+
+        # ── 自定义规则 ──
         custom_rules = load_rules()
         spacer = QLabel("")
         spacer.setFixedHeight(6)
@@ -564,12 +1290,11 @@ class RulePanel(QWidget):
 
         custom_title = QLabel(f"✏️ 自定义规则（共 {len(custom_rules)} 条）")
         custom_title.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #1a1a1a; "
+            "font-size: 14px; font-weight: bold; color: #1a1a1a; "
             "padding: 6px 0; background: transparent;"
         )
         self._list_layout.addWidget(custom_title)
 
-        # 添加自定义规则按钮
         add_btn = QPushButton("  添加自定义规则")
         add_btn.setIcon(qta.icon("fa5s.plus-circle", color="#1a1a1a"))
         add_btn.setStyleSheet(self._btn_style())
@@ -577,8 +1302,32 @@ class RulePanel(QWidget):
         self._list_layout.addWidget(add_btn)
 
         if custom_rules:
+            # 自定义规则也按 rule_type 分组
+            type_groups: OrderedDict[str, list[dict]] = OrderedDict()
             for rule in custom_rules:
-                self._list_layout.addWidget(self._make_rule_card(rule, is_builtin=False))
+                t = rule.get("rule_type", "other")
+                type_groups.setdefault(t, []).append(rule)
+
+            for rtype, rules in type_groups.items():
+                label = _get_type_label(rtype)
+                icon_name, icon_color = _get_rule_icon(rtype)
+
+                group_header = QLabel(f"  {label}  ({len(rules)} 条)")
+                group_header.setStyleSheet(
+                    "font-size: 12px; font-weight: bold; color: #555; "
+                    "padding: 8px 4px 2px 4px; background: transparent;"
+                    " border-bottom: 1px solid #e8e8e8;"
+                )
+                self._list_layout.addWidget(group_header)
+
+                flow = FlowLayout(margin=0, h_spacing=10, v_spacing=10)
+                for rule in rules:
+                    card = RuleCardWidget(rule, is_builtin=False)
+                    card.copy_requested.connect(self._on_copy_custom)
+                    card.edit_requested.connect(self._on_edit)
+                    card.delete_requested.connect(self._on_delete)
+                    flow.addWidget(card)
+                self._list_layout.addWidget(_FlowLayoutContainer(flow))
         else:
             no_custom = QLabel("暂无自定义规则。点击「复制」内置规则可快速创建。")
             no_custom.setStyleSheet(
@@ -587,74 +1336,6 @@ class RulePanel(QWidget):
             self._list_layout.addWidget(no_custom)
 
         self._list_layout.addStretch()
-
-    def _make_rule_card(self, rule: dict, is_builtin: bool) -> QWidget:
-        """创建一条规则的卡片。"""
-        card = QWidget()
-        card.setStyleSheet(
-            "QWidget { background: #ffffff; border: 1px solid #e8e8e8; border-radius: 8px; }"
-        )
-        layout = QHBoxLayout(card)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(12)
-
-        # 左侧：名称 + 描述
-        info = QVBoxLayout()
-        info.setSpacing(3)
-        name_lbl = QLabel(rule.get("name", ""))
-        name_lbl.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #1a1a1a; background: transparent;"
-        )
-        info.addWidget(name_lbl)
-
-        desc = rule.get("desc", "")
-        file = rule.get("file", "")
-        if file:
-            desc += f"  →  {file}"
-        desc_lbl = QLabel(desc)
-        desc_lbl.setStyleSheet("font-size: 11px; color: #888; background: transparent;")
-        desc_lbl.setWordWrap(True)
-        info.addWidget(desc_lbl)
-
-        trigger = rule.get("trigger", "")
-        if trigger:
-            trig_lbl = QLabel(f"触发: {trigger}")
-            trig_lbl.setStyleSheet("font-size: 11px; color: #aaa; background: transparent;")
-            info.addWidget(trig_lbl)
-
-        layout.addLayout(info, 1)
-
-        # 右侧：操作按钮
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
-
-        if is_builtin:
-            example_btn = QPushButton("  示例")
-            example_btn.setIcon(qta.icon("fa5s.info-circle", color="#888"))
-            example_btn.setStyleSheet(self._btn_style_secondary())
-            example_btn.clicked.connect(lambda _, r=rule: self._show_example(r))
-            btn_row.addWidget(example_btn)
-
-            copy_btn = QPushButton("  复制")
-            copy_btn.setIcon(qta.icon("fa5s.copy", color="#1a1a1a"))
-            copy_btn.setStyleSheet(self._btn_style())
-            copy_btn.clicked.connect(lambda _, r=rule: self._on_copy_builtin(r))
-            btn_row.addWidget(copy_btn)
-        else:
-            edit_btn = QPushButton("  编辑")
-            edit_btn.setIcon(qta.icon("fa5s.edit", color="#1a1a1a"))
-            edit_btn.setStyleSheet(self._btn_style())
-            edit_btn.clicked.connect(lambda _, r=rule: self._on_edit(r))
-            btn_row.addWidget(edit_btn)
-
-            del_btn = QPushButton("  删除")
-            del_btn.setIcon(qta.icon("fa5s.trash-alt", color="#e17055"))
-            del_btn.setStyleSheet(self._btn_style_secondary())
-            del_btn.clicked.connect(lambda _, r=rule: self._on_delete(r))
-            btn_row.addWidget(del_btn)
-
-        layout.addLayout(btn_row)
-        return card
 
     # ── 操作 ──────────────────────────────────────────
     def _on_type_changed(self, idx: int):
@@ -685,7 +1366,7 @@ class RulePanel(QWidget):
         self._editing_rule = None
         self._form_group.setTitle("添加自定义规则")
         self._name_input.clear()
-        self._keywords_input.clear()
+        self._keywords_input.set_keywords([])
         self._type_combo.setCurrentIndex(0)
         self._on_type_changed(0)
         self._form_group.setVisible(True)
@@ -694,7 +1375,7 @@ class RulePanel(QWidget):
         self._editing_rule = rule
         self._form_group.setTitle("编辑自定义规则")
         self._name_input.setText(rule.get("name", ""))
-        self._keywords_input.setText(rule.get("keywords", ""))
+        self._keywords_input.set_keywords(rule.get("keywords", []))
         rtype = rule.get("rule_type", "")
         self._type_combo.blockSignals(True)
         idx = self._type_combo.findData(rtype)
@@ -742,7 +1423,7 @@ class RulePanel(QWidget):
 
     def _on_save(self):
         name = self._name_input.text().strip()
-        keywords = self._keywords_input.text().strip()
+        keywords = self._keywords_input.get_keywords()
         rule_type = self._type_combo.currentData()
         if not name:
             self._styled_msg(QMessageBox.Icon.Warning, "提示", "请填写规则名称").exec()
@@ -780,7 +1461,7 @@ class RulePanel(QWidget):
         self._editing_rule = None
         self._form_group.setTitle("复制规则（可修改参数后保存）")
         self._name_input.setText(rule.get("name", ""))
-        self._keywords_input.setText(rule.get("trigger", ""))
+        self._keywords_input.set_keywords(rule.get("trigger", ""))
         rtype = rule.get("rule_type", "")
         self._type_combo.blockSignals(True)
         idx = self._type_combo.findData(rtype)
@@ -790,6 +1471,26 @@ class RulePanel(QWidget):
         params = rule.get("params", {})
         for key, inp in self._params_inputs.items():
             inp.setText(str(params.get(key, "")))
+        self._form_group.setVisible(True)
+
+    def _on_copy_custom(self, rule: dict):
+        """复制自定义规则：带出全部字段，名称加「副本」，存为新规则。"""
+        self._editing_rule = None  # 清空 id，作为新增
+        self._form_group.setTitle("复制规则（可修改后保存）")
+        self._name_input.setText(rule.get("name", "") + " 副本")
+        self._keywords_input.set_keywords(rule.get("keywords", []))
+        rtype = rule.get("rule_type", "")
+        self._type_combo.blockSignals(True)
+        idx = self._type_combo.findData(rtype)
+        self._type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._type_combo.blockSignals(False)
+        self._on_type_changed(idx if idx >= 0 else 0)
+        params = rule.get("params", {})
+        for key, inp in self._params_inputs.items():
+            val = params.get(key, "")
+            if isinstance(val, bool):
+                val = "true" if val else "false"
+            inp.setText(str(val) if val != "" else "")
         self._form_group.setVisible(True)
 
     def _on_cancel(self):

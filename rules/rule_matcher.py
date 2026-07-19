@@ -116,7 +116,8 @@ def build_rule_registry(analysis_modifications: list[dict], requirement_text: st
     from rules.custom_rule_manager import load_rules
     custom_rules = load_rules()
     for cr in custom_rules:
-        keywords = [k.strip() for k in cr.get("keywords", "").split(",") if k.strip()]
+        _kw = cr.get("keywords", [])
+        keywords = _kw if isinstance(_kw, list) else [k.strip() for k in str(_kw).split(",") if k.strip()]
         if not keywords:
             continue
         matched_kw = None

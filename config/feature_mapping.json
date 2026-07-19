@@ -3,59 +3,92 @@
         "杜比": {
             "file": "build_config.txt",
             "key": "CTV_CFG_DOLBY",
-            "value": "y"
+            "value": "y",
+            "keywords": [
+                "杜比"
+            ]
         },
         "miracast": {
             "file": "build_config.txt",
             "key": "CTV_CFG_MIRACAST",
-            "value": "y"
+            "value": "y",
+            "keywords": [
+                "miracast"
+            ]
         },
         "HBG": {
             "file": "build_config.txt",
             "key": "CTV_CFG_HBG_XYDZ21001",
-            "value": "y"
+            "value": "y",
+            "keywords": [
+                "HBG"
+            ]
         },
         "TVcasting": {
             "file": "build_config.txt",
             "key": "CTV_CFG_TVCASTING",
-            "value": "y"
+            "value": "y",
+            "keywords": [
+                "TVcasting"
+            ]
         },
         "eshare": {
             "file": "build_config.txt",
             "key": "CTV_CFG_ESHARE",
-            "value": "y"
+            "value": "y",
+            "keywords": [
+                "eshare"
+            ]
         },
         "蓝屏": {
             "file": "configs/db.ini",
             "key": "System_screencolor",
-            "value": "1"
+            "value": "1",
+            "keywords": [
+                "蓝屏"
+            ]
         }
     },
     "close": {
         "杜比": {
             "file": "build_config.txt",
             "key": "CTV_CFG_DOLBY",
-            "value": "n"
+            "value": "n",
+            "keywords": [
+                "杜比"
+            ]
         },
         "miracast": {
             "file": "build_config.txt",
             "key": "CTV_CFG_MIRACAST",
-            "value": "n"
+            "value": "n",
+            "keywords": [
+                "miracast"
+            ]
         },
         "TVcasting": {
             "file": "build_config.txt",
             "key": "CTV_CFG_TVCASTING",
-            "value": "n"
+            "value": "n",
+            "keywords": [
+                "TVcasting"
+            ]
         },
         "eshare": {
             "file": "build_config.txt",
             "key": "CTV_CFG_ESHARE",
-            "value": "n"
+            "value": "n",
+            "keywords": [
+                "eshare"
+            ]
         },
         "蓝屏": {
             "file": "configs/db.ini",
             "key": "System_screencolor",
-            "value": "0"
+            "value": "0",
+            "keywords": [
+                "蓝屏"
+            ]
         }
     },
     "param": {
@@ -141,5 +174,35 @@
         "硬件": "tv hardware",
         "型号": "tv model",
         "蓝牙": "tv bluetooth"
+    },
+    "country": {
+        "keywords": [
+            "默认国家",
+            "出口地",
+            "出口",
+            "国家",
+            "目的地"
+        ]
+    },
+    "action_prefixes": {
+        "open": [
+            "打开",
+            "开启"
+        ],
+        "close": [
+            "关闭"
+        ],
+        "hide": [
+            "隐藏"
+        ],
+        "show": [
+            "显示"
+        ]
+    },
+    "language": {
+        "keywords": [
+            "默认语言",
+            "默认语种"
+        ]
     }
 }

@@ -135,10 +135,24 @@ def _extract_unrecognized_lines(requirement_text: str) -> list[str]:
         if not is_matched:
             from rules.custom_rule_manager import load_rules
             for cr in load_rules():
-                keywords = [k.strip() for k in cr.get("keywords", "").split(",") if k.strip()]
+                _kw = cr.get("keywords", [])
+                keywords = _kw if isinstance(_kw, list) else [k.strip() for k in str(_kw).split(",") if k.strip()]
                 if any(kw in stripped for kw in keywords):
                     is_matched = True
                     break
+        # 检查是否匹配了 feature_mapping.json 中的动态关键词
+        if not is_matched:
+            try:
+                _fm = json.loads(Path("config/feature_mapping.json").read_text(encoding="utf-8"))
+                for _group in ("country", "language"):
+                    for _kw in _fm.get(_group, {}).get("keywords", []):
+                        if _kw in stripped:
+                            is_matched = True
+                            break
+                    if is_matched:
+                        break
+            except Exception:
+                pass
         if is_matched:
             continue
 
@@ -189,12 +203,15 @@ class DummyAnalyzer(RequirementAnalyzer):
         return self._mapping
 
     def _match_value_map(self, text: str, keyword: str, value_map: dict) -> str | None:
-        variants = [keyword]
+        # 去掉所有空格后匹配，兼容 "菜单显示时间 5 秒" 等任意空格写法
+        text_no_space = text.replace(" ", "")
+        variants = [keyword.replace(" ", "")]
         for i in range(len(keyword) - 1, 1, -1):
-            variants.append(keyword[:i])
+            variants.append(keyword[:i].replace(" ", ""))
         for match_text, mapped_value in value_map.items():
+            match_no_space = match_text.replace(" ", "")
             for kw in variants:
-                if f"{kw}{match_text}" in text or f"{kw} {match_text}" in text or f"{kw}为{match_text}" in text:
+                if f"{kw}{match_no_space}" in text_no_space or f"{kw}为{match_no_space}" in text_no_space:
                     return mapped_value
         return None
 
@@ -218,8 +235,11 @@ class DummyAnalyzer(RequirementAnalyzer):
         warnings: list[str] = []
         mapping = self.mapping
 
-        # ---- 默认语言（支持"默认语言：默认英语。其他：意大利语，德文，..."格式）----
-        lang_match = re.search(r"默认语言[：:]*\s*(?:默认)?\s*([\u4e00-\u9fa5A-Za-z]+)", requirement_text)
+        # ---- 默认语言（关键词从 feature_mapping.language.keywords 读取）----
+        _lang_kws = mapping.get("language", {}).get("keywords", ["默认语言"])
+        _lang_kws_sorted = sorted(set(_lang_kws), key=len, reverse=True)
+        _lang_pattern = r"(?:" + "|".join(re.escape(k) for k in _lang_kws_sorted) + r")[：:]*\s*(?:默认)?\s*([\u4e00-\u9fa5A-Za-z]+)"
+        lang_match = re.search(_lang_pattern, requirement_text)
         if lang_match:
             lang_target = lang_match.group(1).strip()
             if _find_language(lang_target):
@@ -263,23 +283,25 @@ class DummyAnalyzer(RequirementAnalyzer):
         # ---- 白名单 ----
         modifications.extend(self._match_whitelist(requirement_text))
 
-        # ---- 默认国家（也识别"出口"）----
-        country_match = re.search(r"(?:默认国家|出口)[：:]*\s*([^\s，,]+)", requirement_text)
+        # ---- 默认国家（关键词从 feature_mapping.json 的 country.keywords 读取）----
+        country_kws = mapping.get("country", {}).get("keywords", ["默认国家", "出口"])
+        # 按长度降序拼接，避免短词（出口）先匹配长词前缀（出口地）
+        country_kws_sorted = sorted(set(country_kws), key=len, reverse=True)
+        country_pattern = r"(?:" + "|".join(re.escape(k) for k in country_kws_sorted) + r")[：:]*\s*([^\s，,]+)"
+        country_match = re.search(country_pattern, requirement_text)
         if country_match:
             raw_country = country_match.group(1)
             mapping_country = _load_country_map()
             reverse_map = {v: k for k, v in mapping_country.items()}
             country_code_from_cn = reverse_map.get(raw_country)
             if country_code_from_cn:
-                if _check_country_in_list(country_code_from_cn):
-                    modifications.append({"type": "country_list_first", "country_code": country_code_from_cn})
-                else:
-                    warnings.append(f"国家 \"{raw_country}\" ({country_code_from_cn}) 不在当前 CountryList 中，已跳过")
+                # 直接信任映射表，不提前检查 CountryList（文件在远程服务器，本地读不到）
+                modifications.append({"type": "country_list_first", "country_code": country_code_from_cn})
+            elif len(raw_country) == 2 and raw_country.isalpha():
+                # 用户直接输入了国家码（如 IN）
+                modifications.append({"type": "country_list_first", "country_code": raw_country.upper()})
             else:
-                if _check_country_in_list(raw_country.upper()):
-                    modifications.append({"type": "country_list_first", "country_code": raw_country.upper()})
-                else:
-                    warnings.append(f"国家 \"{raw_country}\" 未在映射表或 CountryList 中找到，已跳过")
+                warnings.append(f"国家 \"{raw_country}\" 未在国家映射表中找到，已跳过")
 
         # ---- 参数类 ----
         for keyword, mod in mapping.get("param", {}).items():
@@ -337,7 +359,13 @@ class DummyAnalyzer(RequirementAnalyzer):
         for cn_name, en_name in menu_map.items():
             matched = False
             enable_val = None
-            if f"隐藏{cn_name}" in requirement_text or f"隐藏{cn_name}信息" in requirement_text:
+            # 否定前缀（不显示/不要显示/取消显示 → hide）
+            _neg_prefixes = ["不", "不要", "取消", "关闭"]
+            if any(f"{neg}显示{cn_name}" in requirement_text or f"{neg}显示{cn_name}信息" in requirement_text
+                   for neg in _neg_prefixes):
+                enable_val = "hide"
+                matched = True
+            elif f"隐藏{cn_name}" in requirement_text or f"隐藏{cn_name}信息" in requirement_text:
                 enable_val = "hide"
                 matched = True
             elif f"显示{cn_name}" in requirement_text or f"显示{cn_name}信息" in requirement_text:
@@ -350,10 +378,14 @@ class DummyAnalyzer(RequirementAnalyzer):
                     "enable": enable_val, "prefix": use_prefix,
                 })
 
-        # ---- 基本开关 ----
+        # ---- 基本开关（关键词从 keywords 字段读取，动词从 action_prefixes 读取）----
+        _ap = mapping.get("action_prefixes", {})
+        _open_verbs = _ap.get("open", ["打开", "开启"])
+        _close_verbs = _ap.get("close", ["关闭"])
         for keyword, mod in mapping.get("open", {}).items():
             if keyword.lower() == "eshare": continue
-            if f"打开{keyword}" in requirement_text or f"开启{keyword}" in requirement_text:
+            _kws = mod.get("keywords", [keyword])
+            if any(f"{vb}{kw}" in requirement_text for vb in _open_verbs for kw in _kws):
                 mod_type = "db_ini" if mod["file"].startswith("configs/") else "build_config"
                 entry = {"type": mod_type, "file": mod["file"], "key": mod["key"], "value": mod["value"]}
                 if mod_type == "build_config":
@@ -361,7 +393,8 @@ class DummyAnalyzer(RequirementAnalyzer):
                 modifications.append(entry)
         for keyword, mod in mapping.get("close", {}).items():
             if keyword.lower() == "eshare": continue
-            if f"关闭{keyword}" in requirement_text:
+            _kws = mod.get("keywords", [keyword])
+            if any(f"{vb}{kw}" in requirement_text for vb in _close_verbs for kw in _kws):
                 mod_type = "db_ini" if mod["file"].startswith("configs/") else "build_config"
                 entry = {"type": mod_type, "file": mod["file"], "key": mod["key"], "value": mod["value"]}
                 if mod_type == "build_config":
@@ -426,7 +459,8 @@ class DummyAnalyzer(RequirementAnalyzer):
         # ---- 自定义规则匹配 ----
         from rules.custom_rule_manager import load_rules
         for cr in load_rules():
-            keywords = [k.strip() for k in cr.get("keywords", "").split(",") if k.strip()]
+            _kw = cr.get("keywords", [])
+            keywords = _kw if isinstance(_kw, list) else [k.strip() for k in str(_kw).split(",") if k.strip()]
             if not keywords:
                 continue
             matched_kw = None

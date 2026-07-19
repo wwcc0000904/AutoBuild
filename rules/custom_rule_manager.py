@@ -35,8 +35,20 @@ def _save_raw(data: dict) -> None:
     CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _normalize_keywords(kw) -> list[str]:
+    """关键词统一成数组，兼容旧的逗号分隔字符串。"""
+    if isinstance(kw, list):
+        return [k.strip() for k in kw if k and k.strip()]
+    if isinstance(kw, str):
+        return [k.strip() for k in kw.split(",") if k.strip()]
+    return []
+
+
 def load_rules() -> list[dict]:
-    return _load_raw().get("rules", [])
+    rules = _load_raw().get("rules", [])
+    for r in rules:
+        r["keywords"] = _normalize_keywords(r.get("keywords"))
+    return rules
 
 
 def save_rule(rule: dict) -> dict:
@@ -53,6 +65,9 @@ def save_rule(rule: dict) -> dict:
         # 新增
         rule["id"] = uuid.uuid4().hex[:12]
         rules.append(rule)
+    # keywords 规范化为数组存储
+    if "keywords" in rule:
+        rule["keywords"] = _normalize_keywords(rule["keywords"])
     data["rules"] = rules
     _save_raw(data)
     return rule

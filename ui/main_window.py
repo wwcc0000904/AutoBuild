@@ -1748,13 +1748,17 @@ class MainWindow(QMainWindow):
 
         try:
             # 从目录设置获取上下文信息
+            # customer_dir 用完整路径（供 _check_country_in_list 读取 XML）
+            _dir_name = self._dir_combo.currentText() if hasattr(self, "_dir_combo") else ""
+            _dir_full = self._customer_dir_map.get(_dir_name, _dir_name)
             ctx = {
                 "project": self._project_combo.currentText() if hasattr(self, "_project_combo") else "",
                 "platform": self._board_combo.currentText() if hasattr(self, "_board_combo") else "",
                 "region": self._region_combo.currentText() if hasattr(self, "_region_combo") else "",
                 "customer": self._customer_combo.currentText() if hasattr(self, "_customer_combo") else "",
-                "customer_dir": self._dir_combo.currentText() if hasattr(self, "_dir_combo") else "",
+                "customer_dir": _dir_full,
                 "target_dir": self._target_dir_input.text().strip() if hasattr(self, "_target_dir_input") else "",
+                "base_path": self._base_path,
             }
             self._current_analysis = ai.analyze(requirement_text, **ctx)
             self.log_edit.append(f"[自动] 客户: {self._current_analysis.customer}")
