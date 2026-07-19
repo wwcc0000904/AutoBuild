@@ -625,7 +625,7 @@ _RULE_KW_PATH: dict[str, str] = {
     # 国家/语言
     "国家列表置顶":        "country",
     "默认语言 (置顶)":    "language",
-    "添加语言":           "language",
+    "添加语言":           "language_add",
     # 开关
     "功能开关：HBG":       "open.HBG",
     "功能开关：TVcasting": "open.TVcasting",

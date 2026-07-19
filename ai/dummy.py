@@ -144,7 +144,7 @@ def _extract_unrecognized_lines(requirement_text: str) -> list[str]:
         if not is_matched:
             try:
                 _fm = json.loads(Path("config/feature_mapping.json").read_text(encoding="utf-8"))
-                for _group in ("country", "language"):
+                for _group in ("country", "language", "language_add"):
                     for _kw in _fm.get(_group, {}).get("keywords", []):
                         if _kw in stripped:
                             is_matched = True
