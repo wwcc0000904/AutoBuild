@@ -203,16 +203,19 @@ class DummyAnalyzer(RequirementAnalyzer):
         return self._mapping
 
     def _match_value_map(self, text: str, keyword: str, value_map: dict) -> str | None:
-        # 去掉所有空格后匹配，兼容 "菜单显示时间 5 秒" 等任意空格写法
+        # 去掉所有空格后匹配，兼容任意空格写法
         text_no_space = text.replace(" ", "")
         variants = [keyword.replace(" ", "")]
         for i in range(len(keyword) - 1, 1, -1):
             variants.append(keyword[:i].replace(" ", ""))
+        # 从配置读取值连接词（默认含 "为"、"设为"、"改成" 等）
+        _vp = self.mapping.get("value_prefixes", {}).get("default", ["", "为"])
         for match_text, mapped_value in value_map.items():
             match_no_space = match_text.replace(" ", "")
             for kw in variants:
-                if f"{kw}{match_no_space}" in text_no_space or f"{kw}为{match_no_space}" in text_no_space:
-                    return mapped_value
+                for vp in _vp:
+                    if f"{kw}{vp}{match_no_space}" in text_no_space:
+                        return mapped_value
         return None
 
     def _match_whitelist(self, text: str) -> list[dict]:
@@ -354,23 +357,26 @@ class DummyAnalyzer(RequirementAnalyzer):
                 "after_name": item["after_name"],
             })
 
-        # ---- ctv_setting 菜单开关 ----
+        # ---- ctv_setting 菜单开关（从配置读取匹配模式）----
         menu_map = mapping.get("ctv_setting_menu", {})
-        for cn_name, en_name in menu_map.items():
+        for cn_name, entry in menu_map.items():
+            # 兼容旧格式（字符串）和新格式（对象）
+            if isinstance(entry, str):
+                en_name = entry
+                patterns = {"hide": ["隐藏"], "support": ["显示"]}
+            else:
+                en_name = entry.get("name", cn_name)
+                patterns = entry.get("patterns", {"hide": ["隐藏"], "support": ["显示"]})
+
             matched = False
             enable_val = None
-            # 否定前缀（不显示/不要显示/取消显示 → hide）
-            _neg_prefixes = ["不", "不要", "取消", "关闭"]
-            if any(f"{neg}显示{cn_name}" in requirement_text or f"{neg}显示{cn_name}信息" in requirement_text
-                   for neg in _neg_prefixes):
-                enable_val = "hide"
-                matched = True
-            elif f"隐藏{cn_name}" in requirement_text or f"隐藏{cn_name}信息" in requirement_text:
-                enable_val = "hide"
-                matched = True
-            elif f"显示{cn_name}" in requirement_text or f"显示{cn_name}信息" in requirement_text:
-                enable_val = "support"
-                matched = True
+            # 按 patterns 配置匹配，hide 优先于 support
+            for val in ("hide", "support"):
+                prefixes = patterns.get(val, [])
+                if any(f"{p}{cn_name}" in requirement_text for p in prefixes):
+                    enable_val = val
+                    matched = True
+                    break
             if matched:
                 use_prefix = cn_name in ("蓝牙",)
                 modifications.append({
@@ -378,14 +384,15 @@ class DummyAnalyzer(RequirementAnalyzer):
                     "enable": enable_val, "prefix": use_prefix,
                 })
 
-        # ---- 基本开关（关键词从 keywords 字段读取，动词从 action_prefixes 读取）----
+        # ---- 基本开关（per-rule patterns 优先，fallback 到 action_prefixes）----
         _ap = mapping.get("action_prefixes", {})
-        _open_verbs = _ap.get("open", ["打开", "开启"])
-        _close_verbs = _ap.get("close", ["关闭"])
+        _default_open = _ap.get("open", ["打开", "开启"])
+        _default_close = _ap.get("close", ["关闭"])
         for keyword, mod in mapping.get("open", {}).items():
             if keyword.lower() == "eshare": continue
             _kws = mod.get("keywords", [keyword])
-            if any(f"{vb}{kw}" in requirement_text for vb in _open_verbs for kw in _kws):
+            _verbs = mod.get("patterns", {}).get("open", _default_open)
+            if any(f"{vb}{kw}" in requirement_text for vb in _verbs for kw in _kws):
                 mod_type = "db_ini" if mod["file"].startswith("configs/") else "build_config"
                 entry = {"type": mod_type, "file": mod["file"], "key": mod["key"], "value": mod["value"]}
                 if mod_type == "build_config":
@@ -394,7 +401,8 @@ class DummyAnalyzer(RequirementAnalyzer):
         for keyword, mod in mapping.get("close", {}).items():
             if keyword.lower() == "eshare": continue
             _kws = mod.get("keywords", [keyword])
-            if any(f"{vb}{kw}" in requirement_text for vb in _close_verbs for kw in _kws):
+            _verbs = mod.get("patterns", {}).get("close", _default_close)
+            if any(f"{vb}{kw}" in requirement_text for vb in _verbs for kw in _kws):
                 mod_type = "db_ini" if mod["file"].startswith("configs/") else "build_config"
                 entry = {"type": mod_type, "file": mod["file"], "key": mod["key"], "value": mod["value"]}
                 if mod_type == "build_config":

@@ -4,49 +4,43 @@
             "file": "build_config.txt",
             "key": "CTV_CFG_DOLBY",
             "value": "y",
-            "keywords": [
-                "杜比"
-            ]
+            "keywords": ["杜比"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         },
         "miracast": {
             "file": "build_config.txt",
             "key": "CTV_CFG_MIRACAST",
             "value": "y",
-            "keywords": [
-                "miracast"
-            ]
+            "keywords": ["miracast"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         },
         "HBG": {
             "file": "build_config.txt",
             "key": "CTV_CFG_HBG_XYDZ21001",
             "value": "y",
-            "keywords": [
-                "HBG"
-            ]
+            "keywords": ["HBG"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         },
         "TVcasting": {
             "file": "build_config.txt",
             "key": "CTV_CFG_TVCASTING",
             "value": "y",
-            "keywords": [
-                "TVcasting"
-            ]
+            "keywords": ["TVcasting"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         },
         "eshare": {
             "file": "build_config.txt",
             "key": "CTV_CFG_ESHARE",
             "value": "y",
-            "keywords": [
-                "eshare"
-            ]
+            "keywords": ["eshare"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         },
         "蓝屏": {
             "file": "configs/db.ini",
             "key": "System_screencolor",
             "value": "1",
-            "keywords": [
-                "蓝屏"
-            ]
+            "keywords": ["蓝屏"],
+            "patterns": {"open": ["打开", "开启", "启用"]}
         }
     },
     "close": {
@@ -54,41 +48,36 @@
             "file": "build_config.txt",
             "key": "CTV_CFG_DOLBY",
             "value": "n",
-            "keywords": [
-                "杜比"
-            ]
+            "keywords": ["杜比"],
+            "patterns": {"close": ["关闭", "禁用", "取消"]}
         },
         "miracast": {
             "file": "build_config.txt",
             "key": "CTV_CFG_MIRACAST",
             "value": "n",
-            "keywords": [
-                "miracast"
-            ]
+            "keywords": ["miracast"],
+            "patterns": {"close": ["关闭", "禁用", "取消"]}
         },
         "TVcasting": {
             "file": "build_config.txt",
             "key": "CTV_CFG_TVCASTING",
             "value": "n",
-            "keywords": [
-                "TVcasting"
-            ]
+            "keywords": ["TVcasting"],
+            "patterns": {"close": ["关闭", "禁用", "取消"]}
         },
         "eshare": {
             "file": "build_config.txt",
             "key": "CTV_CFG_ESHARE",
             "value": "n",
-            "keywords": [
-                "eshare"
-            ]
+            "keywords": ["eshare"],
+            "patterns": {"close": ["关闭", "禁用", "取消"]}
         },
         "蓝屏": {
             "file": "configs/db.ini",
             "key": "System_screencolor",
             "value": "0",
-            "keywords": [
-                "蓝屏"
-            ]
+            "keywords": ["蓝屏"],
+            "patterns": {"close": ["关闭", "禁用", "取消"]}
         }
     },
     "param": {
@@ -167,13 +156,62 @@
         }
     ],
     "ctv_setting_menu": {
-        "内核": "tv kernel",
-        "sdk": "tv sdk",
-        "分辨率": "tv resolution",
-        "软件": "tv software",
-        "硬件": "tv hardware",
-        "型号": "tv model",
-        "蓝牙": "tv bluetooth"
+        "内核": {
+            "name": "tv kernel",
+            "keywords": ["内核"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "sdk": {
+            "name": "tv sdk",
+            "keywords": ["sdk"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "分辨率": {
+            "name": "tv resolution",
+            "keywords": ["分辨率"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "软件": {
+            "name": "tv software",
+            "keywords": ["软件"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "硬件": {
+            "name": "tv hardware",
+            "keywords": ["硬件"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "型号": {
+            "name": "tv model",
+            "keywords": ["型号"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        },
+        "蓝牙": {
+            "name": "tv bluetooth",
+            "keywords": ["蓝牙"],
+            "patterns": {
+                "hide": ["隐藏", "不显示", "取消显示", "关闭"],
+                "support": ["显示"]
+            }
+        }
     },
     "country": {
         "keywords": [
@@ -185,19 +223,13 @@
         ]
     },
     "action_prefixes": {
-        "open": [
-            "打开",
-            "开启"
-        ],
-        "close": [
-            "关闭"
-        ],
-        "hide": [
-            "隐藏"
-        ],
-        "show": [
-            "显示"
-        ]
+        "open": ["打开", "开启"],
+        "close": ["关闭"],
+        "hide": ["隐藏"],
+        "show": ["显示"]
+    },
+    "value_prefixes": {
+        "default": ["", "为", "设为", "改成", "改为", "调为"]
     },
     "language": {
         "keywords": [

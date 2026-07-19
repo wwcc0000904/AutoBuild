@@ -123,6 +123,7 @@ _RULE_TYPE_ICONS = {
     "nla": ("fa5s.chart-line", "#2ecc71"),
     "gain": ("fa5s.signal", "#e67e22"),
     "ctv_setting": ("fa5s.toggle-on", "#34495e"),
+    "action_prefix": ("fa5s.text-width", "#795548"),
 }
 
 # ── 规则类型中文标签 ──────────────────────────────────────
@@ -140,6 +141,7 @@ _TYPE_LABELS = {
     "nla": "NLA",
     "gain": "增益",
     "ctv_setting": "菜单开关",
+    "action_prefix": "全局前缀",
 }
 
 
@@ -568,6 +570,52 @@ ALL_RULES = [
             "name": "tv model",
             "enable": "support/hide/disable"
         }
+    },
+    # ── 全局配置 ──
+    {
+        "name": "全局：打开动词",
+        "rule_type": "action_prefix",
+        "desc": "功能开关的打开动词前缀（全局生效）",
+        "file": "feature_mapping.json",
+        "trigger": "所有 open 类规则共用",
+        "example": "打开杜比 → 匹配「打开」\n开启HBG → 匹配「开启」\n可在下方添加更多动词，如「启用」「激活」",
+        "params": {}
+    },
+    {
+        "name": "全局：关闭动词",
+        "rule_type": "action_prefix",
+        "desc": "功能开关的关闭动词前缀（全局生效）",
+        "file": "feature_mapping.json",
+        "trigger": "所有 close 类规则共用",
+        "example": "关闭杜比 → 匹配「关闭」\n可在下方添加更多动词，如「禁用」「取消」",
+        "params": {}
+    },
+    {
+        "name": "全局：隐藏动词",
+        "rule_type": "action_prefix",
+        "desc": "隐藏类操作的动词前缀（全局生效）",
+        "file": "feature_mapping.json",
+        "trigger": "所有 hide 类规则共用",
+        "example": "隐藏内核 → 匹配「隐藏」",
+        "params": {}
+    },
+    {
+        "name": "全局：显示动词",
+        "rule_type": "action_prefix",
+        "desc": "显示类操作的动词前缀（全局生效）",
+        "file": "feature_mapping.json",
+        "trigger": "所有 show 类规则共用",
+        "example": "显示内核 → 匹配「显示」",
+        "params": {}
+    },
+    {
+        "name": "全局：值连接词",
+        "rule_type": "action_prefix",
+        "desc": "属性/CTVData 值匹配的连接词（全局生效）",
+        "file": "feature_mapping.json",
+        "trigger": "上电模式为待机 / 上电模式设为待机 等",
+        "example": "上电模式待机 → 匹配「」（无连接词）\n上电模式为待机 → 匹配「为」\n上电模式设为待机 → 匹配「设为」\n可在下方添加更多连接词",
+        "params": {}
     }
 ]
 
@@ -615,6 +663,12 @@ _RULE_KW_PATH: dict[str, str] = {
     "色温调整 (白平衡)":  "keywords.color_temp",
     "NLA 参数 (OSD曲线)": "keywords.nla",
     "Color Space 增益":   "keywords.gain",
+    # 全局前缀配置
+    "全局：打开动词":     "action_prefixes.open",
+    "全局：关闭动词":     "action_prefixes.close",
+    "全局：隐藏动词":     "action_prefixes.hide",
+    "全局：显示动词":     "action_prefixes.show",
+    "全局：值连接词":     "value_prefixes.default",
 }
 
 
@@ -674,16 +728,43 @@ def _save_keywords_to_path(mapping: dict, kw_path: str, keywords: list[str]) -> 
         node = node[part]
     leaf = parts[-1]
     target = node.get(leaf)
-    # 情况1: 目标是 dict → 给它加 keywords 字段
     if isinstance(target, dict):
         target["keywords"] = keywords
         node[leaf] = target
-    # 情况2: 目标是字符串（如 ctv_setting_menu.xxx）→ 包一层 dict
     elif isinstance(target, str):
         node[leaf] = {"value": target, "keywords": keywords}
-    # 情况3: 目标不存在或为列表 → 直接存为 keywords 结构
     else:
         node[leaf] = {"keywords": keywords}
+
+
+def _resolve_patterns_from_path(mapping: dict, kw_path: str) -> dict[str, list[str]]:
+    """读取匹配模式，如 {"hide": ["隐藏","不显示"], "support": ["显示"]}。"""
+    parts = kw_path.split(".")
+    node = mapping
+    for part in parts:
+        if isinstance(node, dict):
+            node = node.get(part, {})
+        else:
+            return {}
+    if isinstance(node, dict) and "patterns" in node:
+        return {k: list(v) for k, v in node["patterns"].items()}
+    return {}
+
+
+def _save_patterns_to_path(mapping: dict, kw_path: str, patterns: dict[str, list[str]]) -> None:
+    """保存匹配模式到 feature_mapping.json。"""
+    parts = kw_path.split(".")
+    node = mapping
+    for part in parts[:-1]:
+        if part not in node:
+            node[part] = {}
+        node = node[part]
+    leaf = parts[-1]
+    target = node.get(leaf)
+    if isinstance(target, dict):
+        target["patterns"] = patterns
+    else:
+        node[leaf] = {"name": leaf, "patterns": patterns}
 
 
 
@@ -916,6 +997,35 @@ class _RuleDetailOverlay(QWidget):
                 body_lay.addWidget(self._kw_widget)
                 self._kw_path = kw_path
 
+                # 匹配模式（如 hide→["隐藏","不显示"], support→["显示"]）
+                patterns = _resolve_patterns_from_path(fm, kw_path)
+                if patterns:
+                    sep2 = QLabel()
+                    sep2.setFixedHeight(1)
+                    sep2.setStyleSheet("background: #e8e8e8;")
+                    body_lay.addWidget(sep2)
+
+                    pat_title = QLabel("匹配模式:")
+                    pat_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #444; background: transparent;")
+                    body_lay.addWidget(pat_title)
+
+                    self._pattern_widgets: dict[str, KeywordListWidget] = {}
+                    _pat_labels = {
+                        "hide": "→ 隐藏 (hide)",
+                        "support": "→ 显示 (support)",
+                        "value": "→ 值映射",
+                    }
+                    for val_name, kw_list in patterns.items():
+                        lbl = QLabel(_pat_labels.get(val_name, f"→ {val_name}"))
+                        lbl.setStyleSheet("font-size: 11px; color: #666; background: transparent; padding-left: 8px;")
+                        body_lay.addWidget(lbl)
+                        w = KeywordListWidget()
+                        w.set_keywords(kw_list)
+                        body_lay.addWidget(w)
+                        self._pattern_widgets[val_name] = w
+
+                    self._pat_kw_path = kw_path
+
         body_lay.addStretch()
         scroll.setWidget(body)
         root.addWidget(scroll, 1)
@@ -939,6 +1049,20 @@ class _RuleDetailOverlay(QWidget):
                 )
                 save_kw_btn.clicked.connect(self._save_keywords)
                 btn_row.addWidget(save_kw_btn)
+
+                # 保存匹配模式按钮（仅当有 patterns 时显示）
+                _fm_check = _load_feature_mapping()
+                if _resolve_patterns_from_path(_fm_check, _kw_path):
+                    save_pat_btn = QPushButton("  保存匹配模式")
+                    save_pat_btn.setIcon(qta.icon("fa5s.save", color="#fff"))
+                    save_pat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    save_pat_btn.setStyleSheet(
+                        "QPushButton { background: #27ae60; color: #ffffff; border: none;"
+                        " border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: bold; }"
+                        "QPushButton:hover { background: #219a52; }"
+                    )
+                    save_pat_btn.clicked.connect(self._save_patterns)
+                    btn_row.addWidget(save_pat_btn)
 
             copy_btn = QPushButton("  复制为自定义")
             copy_btn.setIcon(qta.icon("fa5s.copy", color="#1a1a1a"))
@@ -983,6 +1107,31 @@ class _RuleDetailOverlay(QWidget):
         box.setIcon(QMessageBox.Icon.Information)
         box.setWindowTitle("已保存")
         box.setText(f"关键词已更新，共 {len(new_kws)} 个，立即生效。")
+        box.setStyleSheet(
+            "QMessageBox { background: #ffffff; }"
+            "QMessageBox QLabel { color: #1a1a1a; background: transparent; }"
+            "QPushButton { background: #e0e0e0; color: #1a1a1a; border: none;"
+            " border-radius: 6px; padding: 6px 18px; }"
+        )
+        box.exec()
+
+    def _save_patterns(self):
+        if not hasattr(self, '_pattern_widgets') or not hasattr(self, '_pat_kw_path'):
+            return
+        new_patterns = {}
+        for val_name, w in self._pattern_widgets.items():
+            kws = w.get_keywords()
+            if kws:
+                new_patterns[val_name] = kws
+        fm = _load_feature_mapping()
+        _save_patterns_to_path(fm, self._pat_kw_path, new_patterns)
+        _save_feature_mapping(fm)
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("已保存")
+        total = sum(len(v) for v in new_patterns.values())
+        box.setText(f"匹配模式已更新，共 {len(new_patterns)} 组 {total} 个模式词，立即生效。")
         box.setStyleSheet(
             "QMessageBox { background: #ffffff; }"
             "QMessageBox QLabel { color: #1a1a1a; background: transparent; }"
