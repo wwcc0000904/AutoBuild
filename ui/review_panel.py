@@ -20,7 +20,7 @@ from review.review_service import ReviewDecision
 
 
 class ReviewPanel(QWidget):
-    """人工审核面板：展示 AI 分析结果，提供通过/拒绝操作。"""
+    """人工审核面板：展示自动分析结果，提供通过/拒绝操作。"""
 
     review_completed = Signal(ReviewDecision)
 

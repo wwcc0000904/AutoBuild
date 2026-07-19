@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import List, Optional
+from xml.sax.saxutils import escape as xml_escape
 
 from rules.base_rule import BaseRule
 
@@ -75,16 +76,19 @@ class CtvDataRule(BaseRule):
 
     def _replace_value(self, content: str) -> str:
         pattern = re.escape(self.name)
+        safe_value = xml_escape(self.value)
         return re.sub(
             rf'(<data\s+name="{pattern}"\s+value=")([^"]*)(")',
-            rf'\g<1>{self.value}\g<3>',
+            rf'\g<1>{safe_value}\g<3>',
             content,
         )
 
     def _append_node(self, content: str) -> str:
         """追加新节点，优先插入 <customized> 区域内。"""
         indent = "        "
-        new_node = f'{indent}<data name="{self.name}" value="{self.default_value}"/>'
+        safe_name = xml_escape(self.name)
+        safe_value = xml_escape(self.default_value)
+        new_node = f'{indent}<data name="{safe_name}" value="{safe_value}"/>'
 
         # 1. 先尝试在 after_name 节点后插入
         pattern = re.escape(self.after_name)
@@ -102,7 +106,7 @@ class CtvDataRule(BaseRule):
             line_end = content.find("\n", customized_open)
             if line_end >= 0:
                 insert_pos = line_end + 1
-                comment = f'{indent}<!-- 自定义信息{self.name} -->'
+                comment = f'{indent}<!-- 自定义信息{xml_escape(self.name)} -->'
                 return content[:insert_pos] + comment + "\n" + new_node + "\n" + content[insert_pos:]
 
         # 3. 兜底：找最后一个 <data ... /> 节点后追加

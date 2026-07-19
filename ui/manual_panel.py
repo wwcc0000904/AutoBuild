@@ -1,4 +1,4 @@
-"""手动修改面板 — 直接选择修改项，无需 AI 分析。"""
+"""手动修改面板 — 直接选择修改项，无需自动分析。"""
 from __future__ import annotations
 
 import json

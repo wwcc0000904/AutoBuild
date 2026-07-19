@@ -29,8 +29,9 @@ class GainRule(BaseRule):
 
         content = target.read_text(encoding="utf-8")
 
+        safe_name = re.escape(self.name)
         modified = re.sub(
-            rf'(PQ_\w+_{self.name}\s*=\s*)([\d,;-]+)',
+            rf'(PQ_\w+_{safe_name}\s*=\s*)([\d,;-]+)',
             lambda m: self._replace_line(m),
             content,
         )

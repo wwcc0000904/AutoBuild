@@ -36,10 +36,15 @@ class SSHConnectWorker(QThread):
     def run(self):
         try:
             import paramiko
+            import os
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            # 兼容旧版 SSH 服务器
-            transport = None
+            # 使用系统已知主机密钥，首次连接时自动保存
+            known_hosts = os.path.expanduser("~/.ssh/known_hosts")
+            try:
+                client.load_system_host_keys(known_hosts)
+            except Exception:
+                pass
+            client.set_missing_host_key_policy(paramiko.WarningPolicy())
             client.connect(
                 self.host, port=self.port,
                 username=self.username, password=self.password,
@@ -254,15 +259,13 @@ class LoginDialog(QDialog):
 
         self._remember_pwd_cb.setChecked(bool(remember_pwd))
         if remember_pwd:
-            # 优先从钥匙串读取密码
+            # 从钥匙串读取密码（不使用 QSettings 明文存储）
             pwd = ""
             try:
                 import keyring
                 pwd = keyring.get_password("CtvAuto", username) or ""
             except Exception:
-                pass
-            if not pwd:
-                pwd = str(password)  # 回退到 QSettings
+                self._logger.warning("keyring 不可用，无法自动填充密码")
             if pwd:
                 self._pwd_input.setText(pwd)
                 from PySide6.QtCore import QTimer
@@ -285,11 +288,8 @@ class LoginDialog(QDialog):
                 except Exception:
                     pass
         except Exception:
-            # keyring 不可用时回退到 QSettings（不推荐）
-            if self._remember_pwd_cb.isChecked():
-                self._settings.setValue("login/password", self._pwd_input.text())
-            else:
-                self._settings.remove("login/password")
+            # keyring 不可用时禁止明文存储密码
+            self._logger.warning("keyring 不可用，密码不会被保存")
 
     def get_ssh_client(self):
         return self._ssh_client

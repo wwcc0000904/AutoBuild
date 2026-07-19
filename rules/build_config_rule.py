@@ -20,6 +20,8 @@ class BuildConfigRule(BaseRule):
         self.key = key
         self.new_value = new_value
         self.mode = mode
+        # 值已是目标值、未触发写入的配置项：(file, key, final_value)
+        self.confirmed: list[tuple[str, str, str]] = []
 
     def apply(self, project_root: Path) -> List[Path]:
         changed: List[Path] = []
@@ -40,29 +42,39 @@ class BuildConfigRule(BaseRule):
     def _modify_content(self, content: str) -> str:
         lines = content.splitlines(keepends=True)
         new_lines: list[str] = []
+        self.confirmed = []
 
         for line in lines:
             if line.strip().startswith(self.key):
-                new_lines.append(self._modify_line(line))
+                new_line = self._modify_line(line)
+                new_lines.append(new_line)
+                # 值没变时记录确认项，让用户看到最终值
+                if new_line == line:
+                    m = re.match(r'\s*' + re.escape(self.key) + r'\s*=\s*([^\r\n]*)', new_line)
+                    if m:
+                        self.confirmed.append((self.file, self.key, m.group(1).strip()))
             else:
                 new_lines.append(line)
 
         return "".join(new_lines)
 
     def _modify_line(self, line: str) -> str:
-        eq_match = re.match(r'(\s*' + re.escape(self.key) + r'\s*=\s*)(.+)', line)
+        # 用 [^\r\n]* 匹配值（避免吃掉 \r），用 (\r?\n)? 捕获行尾换行符
+        eq_match = re.match(r'(\s*' + re.escape(self.key) + r'\s*=\s*)([^\r\n]*)(\r?\n)?$', line)
         if not eq_match:
             return line
 
         prefix = eq_match.group(1)
         value_part = eq_match.group(2)
+        line_ending = eq_match.group(3) or ""
 
         if self.mode == "value_part":
             new_value_part = re.sub(r'^\d+', self.new_value, value_part)
         else:
-            new_value_part = self.new_value + "\n"
+            new_value_part = self.new_value
 
-        if line.endswith("\n") and not new_value_part.endswith("\n"):
-            new_value_part += "\n"
+        if new_value_part == value_part:
+            # 值没变，原样返回（保留原换行符，避免误判为已修改）
+            return line
 
-        return prefix + new_value_part
+        return prefix + new_value_part + line_ending

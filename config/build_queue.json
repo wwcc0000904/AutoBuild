@@ -1,0 +1,135 @@
+[
+  {
+    "id": "b8da5689e2f0",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ--0049",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ--0049/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开杜比",
+    "status": "pending",
+    "created_at": "2026-07-19 04:26:05",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "cafec46bbd75",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-004",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-004/build_config.txt",
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-004/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "电流 77",
+    "status": "pending",
+    "created_at": "2026-07-19 00:29:47",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "a6a5cae2fe72",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9873",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9873/build_config.txt",
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9873/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "电流 354",
+    "status": "pending",
+    "created_at": "2026-07-19 03:47:46",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "418993e75785",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-998",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-998/build_config.txt",
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-998/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开杜比 电流 334",
+    "status": "pending",
+    "created_at": "2026-07-19 02:10:26",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "8edc1e5b4a07",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-556",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-556/build_config.txt",
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-556/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开杜比",
+    "status": "pending",
+    "created_at": "2026-07-19 02:12:32",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "4fc473152074",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9876",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9876/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开杜比",
+    "status": "pending",
+    "created_at": "2026-07-19 04:33:14",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "8a28fcdae9c5",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9874",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9874/build_config.txt",
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-9874/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开杜比",
+    "status": "pending",
+    "created_at": "2026-07-19 03:48:25",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  },
+  {
+    "id": "13aea6ee67b2",
+    "customer_name": "Aipuda",
+    "project_path": "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ--4454",
+    "modified_files": [
+      "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ--4454/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+    ],
+    "analysis_summary": "打开预装 EsharePlus",
+    "status": "pending",
+    "created_at": "2026-07-19 02:07:07",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": ""
+  }
+]

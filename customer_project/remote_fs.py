@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import shlex
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -80,10 +81,14 @@ class RemotePath:
             )
         return out
 
+    def _q(self) -> str:
+        """返回路径的安全 shell 引用形式。"""
+        return shlex.quote(self._path)
+
     def exists(self) -> bool:
         try:
             out = self._exec(
-                f'test -e "{self._path}" && echo YES || echo NO'
+                f'test -e {self._q()} && echo YES || echo NO'
             )
             return out.strip() == "YES"
         except RemoteCommandError:
@@ -92,39 +97,41 @@ class RemotePath:
     def is_dir(self) -> bool:
         try:
             out = self._exec(
-                f'test -d "{self._path}" && echo YES || echo NO'
+                f'test -d {self._q()} && echo YES || echo NO'
             )
             return out.strip() == "YES"
         except RemoteCommandError:
             return False
 
     def read_text(self, encoding: str = "utf-8") -> str:
-        return self._exec(f'cat "{self._path}"', encoding=encoding)
+        return self._exec(f'cat {self._q()}', encoding=encoding)
 
     def write_text(self, content: str, encoding: str = "utf-8") -> None:
         encoded = base64.b64encode(content.encode(encoding)).decode("ascii")
-        # 分块写入，避免命令行过长
+        # chunk_size 必须是 4 的倍数：base64 每 4 个字符解码为 3 字节，
+        # 分块时如果不对齐会导致解码错误。
         chunk_size = 4000
         if len(encoded) <= chunk_size:
-            self._exec(f'echo "{encoded}" | base64 -d > "{self._path}"')
+            self._exec(f'echo {shlex.quote(encoded)} | base64 -d > {self._q()}')
         else:
-            # 先清空，再追加
+            # 按 chunk_size 分块，如果最后一块不是 4 的倍数则合并到前一块
+            chunks = [encoded[i:i + chunk_size] for i in range(0, len(encoded), chunk_size)]
+            if len(chunks) > 1 and len(chunks[-1]) % 4 != 0:
+                chunks[-2] += chunks.pop()
             first = True
-            for i in range(0, len(encoded), chunk_size):
-                chunk = encoded[i:i + chunk_size]
+            for chunk in chunks:
                 if first:
-                    self._exec(f'echo -n "{chunk}" | base64 -d > "{self._path}"')
+                    self._exec(f'echo -n {shlex.quote(chunk)} | base64 -d > {self._q()}')
                     first = False
                 else:
-                    # 追加模式需要用 printf 和 >>
-                    self._exec(f'echo -n "{chunk}" | base64 -d >> "{self._path}"')
+                    self._exec(f'echo -n {shlex.quote(chunk)} | base64 -d >> {self._q()}')
 
     # ── 远程目录操作 ──
 
     def remote_copytree(self, dest: "RemotePath") -> None:
         """远程复制目录。"""
-        self._exec(f'cp -r "{self._path}" "{dest._path}"')
+        self._exec(f'cp -r {self._q()} {dest._q()}')
 
     def remote_rmtree(self) -> None:
         """远程删除目录。"""
-        self._exec(f'rm -rf "{self._path}"')
+        self._exec(f'rm -rf {self._q()}')

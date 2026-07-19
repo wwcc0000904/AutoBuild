@@ -10,18 +10,18 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "custom_rules.
 
 # 支持的规则类型及其参数
 RULE_TYPES = {
-    "db_ini": {"label": "DB INI 修改", "params": ["file", "key", "value"]},
-    "prop": {"label": "属性修改", "params": ["file", "key", "value"]},
-    "ctv_data": {"label": "CTV Data 修改", "params": ["name", "value"]},
-    "build_config": {"label": "Build Config 修改", "params": ["file", "key", "value"]},
-    "whitelist": {"label": "白名单修改", "params": ["package", "action"]},
-    "preinstall": {"label": "预装应用", "params": ["app", "enabled"]},
-    "country_list_first": {"label": "国家列表置顶", "params": ["country_code"]},
-    "language_first": {"label": "语言置顶", "params": ["target"]},
-    "color_temp": {"label": "色温调整", "params": ["values"]},
-    "gain": {"label": "增益调整", "params": ["name", "values"]},
-    "nla": {"label": "NLA 参数", "params": ["param", "value"]},
-    "ctv_setting": {"label": "CTV Setting", "params": ["name", "enable"]},
+    "db_ini": {"label": "DB INI 修改", "params": ["file", "key", "value"], "required": ["key"]},
+    "prop": {"label": "属性修改", "params": ["file", "key", "value"], "required": ["key"]},
+    "ctv_data": {"label": "CTV Data 修改", "params": ["name", "value"], "required": ["name"]},
+    "build_config": {"label": "Build Config 修改", "params": ["file", "key", "value"], "required": ["key"]},
+    "whitelist": {"label": "白名单修改", "params": ["package", "action"], "required": ["package"]},
+    "preinstall": {"label": "预装应用", "params": ["app", "enabled"], "required": ["app"]},
+    "country_list_first": {"label": "国家列表置顶", "params": ["country_code"], "required": ["country_code"]},
+    "language_first": {"label": "语言置顶", "params": ["target"], "required": ["target"]},
+    "color_temp": {"label": "色温调整", "params": ["values"], "required": ["values"]},
+    "gain": {"label": "增益调整", "params": ["name", "values"], "required": ["name", "values"]},
+    "nla": {"label": "NLA 参数", "params": ["param", "value"], "required": ["param"]},
+    "ctv_setting": {"label": "CTV Setting", "params": ["name", "enable"], "required": ["name"]},
 }
 
 

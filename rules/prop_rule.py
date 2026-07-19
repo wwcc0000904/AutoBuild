@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List
 
@@ -18,6 +19,7 @@ class PropRule(BaseRule):
         self.file = file
         self.key = key
         self.value = value
+        self.confirmed: list[tuple[str, str, str]] = []
 
     def apply(self, project_root: Path) -> List[Path]:
         changed: List[Path] = []
@@ -38,11 +40,15 @@ class PropRule(BaseRule):
     def _modify_content(self, content: str) -> str:
         lines = content.splitlines(keepends=True)
         new_lines: list[str] = []
+        self.confirmed = []
 
         for line in lines:
             stripped = line.strip()
             if stripped.startswith(self.key):
-                new_lines.append(self._replace_value(line))
+                new_line = self._replace_value(line)
+                new_lines.append(new_line)
+                if new_line == line:
+                    self.confirmed.append((self.file, self.key, str(self.value)))
             else:
                 new_lines.append(line)
 
@@ -50,6 +56,12 @@ class PropRule(BaseRule):
 
     def _replace_value(self, line: str) -> str:
         if "=" in line:
-            before, _ = line.split("=", 1)
-            return f"{before}={self.value}\n"
+            before, after = line.split("=", 1)
+            # 保留原行尾换行符，避免把 \r\n 误转成 \n
+            m = re.match(r'([^\r\n]*)(\r?\n)?$', after)
+            old_value = m.group(1) if m else after
+            line_ending = m.group(2) or "" if m else ""
+            if old_value.strip() == str(self.value).strip():
+                return line  # 值没变，原样返回
+            return f"{before}={self.value}{line_ending}"
         return line

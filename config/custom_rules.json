@@ -1,17 +1,6 @@
 {
   "rules": [
     {
-      "id": "example001",
-      "name": "修改开机Logo路径",
-      "keywords": "开机Logo,boot logo,BootLogo",
-      "rule_type": "db_ini",
-      "params": {
-        "file": "db.ini",
-        "key": "BootLogo",
-        "value": "/custom/boot_logo.png"
-      }
-    },
-    {
       "id": "example002",
       "name": "添加WiFi白名单",
       "keywords": "WiFi白名单,wifi whitelist",
@@ -35,8 +24,8 @@
       "keywords": "预装,preinstall",
       "rule_type": "preinstall",
       "params": {
-        "app": "tvcda",
-        "enabled": "true"
+        "app": "ESharePlus",
+        "enabled": true
       },
       "id": "4597fd93e98f"
     },
@@ -47,7 +36,8 @@
       "params": {
         "file": "ctvbuild.prop",
         "key": "ro.config.media_vol_default"
-      }
+      },
+      "id": "176e01f23e74"
     },
     {
       "name": "属性：驱动",

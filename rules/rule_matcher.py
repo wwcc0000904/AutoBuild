@@ -54,7 +54,9 @@ def build_rule_registry(analysis_modifications: list[dict], requirement_text: st
             ))
         elif t == "preinstall":
             from rules.preinstall_rule import PreinstallRule
-            registry.add(PreinstallRule(app=mod.get("app", "ESharePlus"), enabled=mod.get("enabled", False)))
+            _enabled_raw = mod.get("enabled", False)
+            _enabled = _enabled_raw if isinstance(_enabled_raw, bool) else str(_enabled_raw).lower() in ("true", "y", "1", "yes")
+            registry.add(PreinstallRule(app=mod.get("app", "ESharePlus"), enabled=_enabled))
         elif t in ("whitelist", "whitelist_append"):
             from rules.whitelist_rule import WhitelistRule
             registry.add(WhitelistRule(package=mod["package"], action=mod.get("action", "add")))

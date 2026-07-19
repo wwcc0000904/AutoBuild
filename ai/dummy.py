@@ -62,7 +62,7 @@ WHITELIST_PACKAGES = {
 
 # 已知会被匹配的行模式（用于过滤已匹配的行）
 _MATCHED_PATTERNS = [
-    r"默认语言", r"默认国家", r"打开", r"开启", r"关闭", r"隐藏", r"显示",
+    r"默认语言", r"默认国家", r"出口", r"打开", r"开启", r"关闭", r"隐藏", r"显示",
     r"电流", r"客户",
     r"上电模式", r"开机模式", r"开机桌面", r"菜单显示时间", r"语言显示",
     r"W/B", r"白平衡", r"R\s+Gain", r"G\s+Gain", r"B\s+Gain",
@@ -95,8 +95,13 @@ _NOISE_PATTERNS = [
 def _find_language(target: str) -> bool:
     """检查 language_map.json 中是否有指定语言（按代码或中文名匹配）。"""
     lang_map = _load_language_map()
+    # 标准化：将"文"后缀转为"语"后缀
+    normalized = target
+    if normalized.endswith("文"):
+        normalized = normalized[:-1] + "语"
     for code, info in lang_map.items():
-        if target.upper() == code.upper() or target == info.get("name", ""):
+        name = info.get("name", "")
+        if target.upper() == code.upper() or target == name or normalized == name:
             return True
     return False
 
@@ -213,29 +218,53 @@ class DummyAnalyzer(RequirementAnalyzer):
         warnings: list[str] = []
         mapping = self.mapping
 
-        # ---- 默认语言 ----
-        m = re.search(r"默认语言\s*([^\s，,]+)", requirement_text)
-        if m:
-            lang_target = m.group(1)
+        # ---- 默认语言（支持"默认语言：默认英语。其他：意大利语，德文，..."格式）----
+        lang_match = re.search(r"默认语言[：:]*\s*(?:默认)?\s*([\u4e00-\u9fa5A-Za-z]+)", requirement_text)
+        if lang_match:
+            lang_target = lang_match.group(1).strip()
             if _find_language(lang_target):
                 modifications.append({"type": "language_first", "target": lang_target})
             else:
                 warnings.append(f"语言 \"{lang_target}\" 不在系统支持的语言列表中，已跳过")
 
-        # ---- 添加语言 ----
+        # ---- 添加语言（识别"其他：意大利语，德文，..."格式）----
+        other_lang_match = re.search(r"其他[：:]*\s*([^\n]+)", requirement_text)
+        if other_lang_match:
+            other_langs_text = other_lang_match.group(1)
+            # 按逗号分割
+            for lang_item in re.split(r"[，,、]+", other_langs_text):
+                lang_item = lang_item.strip()
+                if not lang_item:
+                    continue
+                # 保留完整语言名（如"意大利语"、"德文"）
+                lang_name = lang_item.strip()
+                if not lang_name:
+                    continue
+                if _find_language(lang_name):
+                    modifications.append({"type": "language_add", "target": lang_name})
+                else:
+                    warnings.append(f"语言 \"{lang_name}\" 不在系统支持的语言列表中，已跳过")
+        
+        # ---- 兼容旧格式：添加语言 ----
         add_lang_match = re.search(r"添加\s*([\u4e00-\u9fa5A-Za-z-]+)\s*语?", requirement_text)
         if add_lang_match:
             lang_target = add_lang_match.group(1).strip()
-            if _find_language(lang_target):
-                modifications.append({"type": "language_add", "target": lang_target})
-            else:
-                warnings.append(f"语言 \"{lang_target}\" 不在系统支持的语言列表中，已跳过")
+            # 检查是否已经在"其他"中处理过
+            already_added = any(
+                mod.get("type") == "language_add" and mod.get("target") == lang_target
+                for mod in modifications
+            )
+            if not already_added:
+                if _find_language(lang_target):
+                    modifications.append({"type": "language_add", "target": lang_target})
+                else:
+                    warnings.append(f"语言 \"{lang_target}\" 不在系统支持的语言列表中，已跳过")
 
         # ---- 白名单 ----
         modifications.extend(self._match_whitelist(requirement_text))
 
-        # ---- 默认国家 ----
-        country_match = re.search(r"默认国家\s*([^\s，,]+)", requirement_text)
+        # ---- 默认国家（也识别"出口"）----
+        country_match = re.search(r"(?:默认国家|出口)[：:]*\s*([^\s，,]+)", requirement_text)
         if country_match:
             raw_country = country_match.group(1)
             mapping_country = _load_country_map()

@@ -66,19 +66,23 @@ class NlaRule(BaseRule):
 
     def _replace_value(self, line: str) -> str:
         # NlaInfo_brightness = 0,128,256,328,500;
-        match = re.match(r'(NlaInfo_\w+\s*=\s*)([^;]+);', line)
+        # 匹配 prefix + values + ; + 行尾（保留 ; 后的注释和原始换行符）
+        match = re.match(r'(NlaInfo_\w+\s*=\s*)([^;]+);(.*)', line, re.DOTALL)
         if not match:
             return line
 
         prefix = match.group(1)
+        trailing = match.group(3)  # ; 之后的内容（注释、换行等）
 
         if self._full_values is not None:
             # 全行替换
-            return f"{prefix}{','.join(self._full_values)};\n"
+            new_values = ','.join(self._full_values)
         else:
             # 替换单个位置
             values_str = match.group(2)
             values = [v.strip() for v in values_str.split(",")]
             if self.position < len(values):
                 values[self.position] = self.value
-            return f"{prefix}{','.join(values)};\n"
+            new_values = ','.join(values)
+
+        return f"{prefix}{new_values};{trailing}"

@@ -42,8 +42,9 @@ def validate_user_app(project_root: Path) -> ValidationResult:
 def validate_product_model(project_root: Path) -> ValidationResult:
     """校验并修正 ctvbuild.prop 中 ro.product.model 为 SMART_TV。
 
-    如果不是 SMART_TV，自动修改并记录警告。
-    如果已经是 SMART_TV，不做处理。
+    - 如果已经是 SMART_TV，不做处理，passed=True，无 warning。
+    - 如果不是，自动修正为 SMART_TV，passed=True，warning 标注"已自动修正"。
+    - 如果文件或配置项不存在，passed=False。
     """
     result = ValidationResult(passed=True)
     prop_path = project_root / "ctvbuild.prop"
@@ -55,7 +56,8 @@ def validate_product_model(project_root: Path) -> ValidationResult:
 
     content = prop_path.read_text(encoding="utf-8")
 
-    match = re.search(r'(ro\.product\.model\s*=\s*)(.+)', content)
+    # 只匹配等号后的值部分（到行尾，不含注释和换行）
+    match = re.search(r'(ro\.product\.model\s*=\s*)([^\s#]+)', content)
     if not match:
         result.passed = False
         result.warnings.append("ctvbuild.prop 中未找到 ro.product.model 配置项")
@@ -65,11 +67,11 @@ def validate_product_model(project_root: Path) -> ValidationResult:
     if model_value.upper() == "SMART_TV":
         return result
 
-    # 不是 SMART_TV，自动修正
+    # 不是 SMART_TV，自动修正（只替换值部分，保留行内注释和换行）
     new_content = content[:match.start(2)] + "SMART_TV" + content[match.end(2):]
     prop_path.write_text(new_content, encoding="utf-8")
     result.warnings.append(
-        f"ro.product.model 已从 \"{model_value}\" 修改为 \"SMART_TV\""
+        f"[已自动修正] ro.product.model: \"{model_value}\" -> \"SMART_TV\""
     )
 
     return result

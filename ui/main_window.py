@@ -25,9 +25,11 @@ import qtawesome as qta
 from builder.build_service import BuildService
 from config.logging_setup import get_logger
 from customer_project.project_manager import CustomerProjectManager
+from executor.build_queue import BuildQueue
 from review.review_service import ReviewService, ReviewDecision
 from ui.review_panel import ReviewPanel
 from ui.manual_panel import ManualPanel
+from ui.queue_panel import QueuePanel
 from ui.rule_panel import RulePanel
 
 
@@ -121,6 +123,7 @@ class MainWindow(QMainWindow):
         project_manager: CustomerProjectManager,
         review_service: ReviewService,
         build_service: BuildService,
+        build_queue: BuildQueue = None,
         ssh_client=None,
         base_path: str = "",
     ) -> None:
@@ -128,6 +131,9 @@ class MainWindow(QMainWindow):
         self._project_manager = project_manager
         self._review_service = review_service
         self._build_service = build_service
+        self._build_queue = build_queue or BuildQueue()
+        if ssh_client:
+            self._build_queue.set_ssh_client(ssh_client)
         self._logger = get_logger()
         self._current_analysis = None
         self._ssh_client = ssh_client
@@ -229,14 +235,15 @@ class MainWindow(QMainWindow):
         # 导航按钮
         self._nav_btns: list[QPushButton] = []
         nav_items = [
-            ("  AI 模式", 0),
+            ("  自动模式", 0),
             ("  手动模式", 1),
             ("  审核面板", 2),
             ("  执行结果", 3),
             ("  编译构建", 4),
-            ("  规则管理", 5),
+            ("  编译队列", 5),
+            ("  规则管理", 6),
         ]
-        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.cogs"]
+        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs"]
         for (text, idx), icon_name in zip(nav_items, nav_icons):
             btn = QPushButton(text)
             btn.setIcon(qta.icon(icon_name, color="#888888"))
@@ -358,7 +365,7 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background: transparent;")
 
-        # 页面0: AI 模式
+        # 页面0: 自动模式
         self._ai_page = self._build_ai_page()
         self._stack.addWidget(self._ai_page)
 
@@ -380,7 +387,13 @@ class MainWindow(QMainWindow):
         self._build_page = self._build_build_page()
         self._stack.addWidget(self._build_page)
 
-        # 页面5: 规则管理
+        # 页面5: 编译队列
+        self._queue_page = QueuePanel(self._build_queue)
+        self._queue_page.build_requested.connect(self._on_queue_build_requested)
+        self._queue_page.build_all_requested.connect(self._on_build_all)
+        self._stack.addWidget(self._queue_page)
+
+        # 页面6: 规则管理
         self._rule_page = RulePanel()
         self._stack.addWidget(self._rule_page)
 
@@ -422,7 +435,7 @@ class MainWindow(QMainWindow):
         )
 
     def _update_nav_icons(self, active_idx: int):
-        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.cogs"]
+        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs"]
         for i, btn in enumerate(self._nav_btns):
             color = "#1a1a1a" if i == active_idx else "#888888"
             btn.setIcon(qta.icon(nav_icon_names[i], color=color))
@@ -918,8 +931,8 @@ class MainWindow(QMainWindow):
 
     def _switch_mode(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
-        # 规则管理页面隐藏目录设置
-        self._dir_card.setVisible(index != 4)
+        # 规则管理和编译队列页面隐藏目录设置
+        self._dir_card.setVisible(index not in (4, 5, 6))
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(self._nav_btn_style(i == index))
         self._update_nav_icons(index)
@@ -937,11 +950,11 @@ class MainWindow(QMainWindow):
         self._current_analysis = None
         if hasattr(self, 'run_button'):
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
         self._switch_mode(0)
         self._logger.info("已重置所有状态")
 
-    # ========== AI 模式页面 ==========
+    # ========== 自动模式页面 ==========
 
     def _build_ai_page(self) -> QWidget:
         page = QWidget()
@@ -975,7 +988,7 @@ class MainWindow(QMainWindow):
         self.requirement_edit.setMinimumHeight(120)
         req_layout.addWidget(self.requirement_edit)
 
-        self.run_button = QPushButton("  AI 分析并提交审核")
+        self.run_button = QPushButton("  自动分析并提交审核")
         self.run_button.setIcon(qta.icon("fa5s.rocket", color="#1a1a1a"))
         self.run_button.setStyleSheet(self._accent_btn_style())
         self.run_button.clicked.connect(self._on_analyze)
@@ -1076,6 +1089,15 @@ class MainWindow(QMainWindow):
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
+        self._enqueue_btn = QPushButton("＋ 加入编译队列")
+        self._enqueue_btn.setStyleSheet(
+            f"QPushButton {{ background: {self.CLR_ACCENT}; color: white; border: none;"
+            " border-radius: 6px; padding: 6px 18px; font-size: 13px; min-width: 80px; }"
+            "QPushButton:hover { background: #3a8ee6; }"
+        )
+        self._enqueue_btn.clicked.connect(self._enqueue_current_result)
+        self._enqueue_btn.setVisible(False)
+        btn_layout.addWidget(self._enqueue_btn)
         back_btn = QPushButton("← 返回")
         back_btn.setStyleSheet(self._small_btn_style())
         back_btn.clicked.connect(lambda: self._switch_mode(0))
@@ -1095,6 +1117,11 @@ class MainWindow(QMainWindow):
         build_card = self._make_card("远程编译")
         build_layout = build_card.layout()
 
+        # 状态标签
+        self._build_status_label = QLabel("等待编译...")
+        self._build_status_label.setStyleSheet("font-size: 14px; color: #666; padding: 10px;")
+        build_layout.addWidget(self._build_status_label)
+
         cmd_row = QHBoxLayout()
         cmd_lbl = QLabel("编译命令:")
         cmd_lbl.setStyleSheet(f"font-size: 11px; background: transparent; color: {self.CLR_TEXT_DIM};")
@@ -1104,21 +1131,6 @@ class MainWindow(QMainWindow):
         self._build_cmd_input.setStyleSheet(self._input_style())
         cmd_row.addWidget(self._build_cmd_input, 1)
         build_layout.addLayout(cmd_row)
-
-        prompt_row = QHBoxLayout()
-        prompt_lbl = QLabel("选单自动选择:")
-        prompt_lbl.setStyleSheet(f"font-size: 11px; background: transparent; color: {self.CLR_TEXT_DIM};")
-        prompt_row.addWidget(prompt_lbl)
-        self._build_prompt_combo = QComboBox()
-        self._build_prompt_combo.addItems([
-            "第 1 项 (1)（推荐）",
-            "第 0 项 (0)",
-            "第 2 项 (2)",
-            "默认上次 (z)",
-        ])
-        self._build_prompt_combo.setStyleSheet(self._combo_style())
-        prompt_row.addWidget(self._build_prompt_combo, 1)
-        build_layout.addLayout(prompt_row)
 
         build_btn_row = QHBoxLayout()
         build_btn_row.addStretch()
@@ -1343,16 +1355,6 @@ class MainWindow(QMainWindow):
                 break
         self._shell_running = False
 
-    def _selected_build_prompt_key(self) -> str:
-        text = self._build_prompt_combo.currentText()
-        if "0" in text:
-            return "0"
-        if "1" in text:
-            return "1"
-        if "2" in text:
-            return "2"
-        return "\n"
-
     def _on_start_build(self) -> None:
         try:
             # 用实际目标路径生成编译命令，确保后缀正确
@@ -1368,10 +1370,11 @@ class MainWindow(QMainWindow):
             self._build_done = False
 
             # 设置信号驱动的实时日志回调
-            self._build_service._external_on_log = self._log_emitter.log_received.emit
-
+            self._build_service.set_callbacks(
+                on_log=self._log_emitter.log_received.emit,
+                on_finished=lambda status, code: self._log_emitter.finished.emit(status, code),
+            )
             build_job = self._build_service.submit(str(self._get_target_path()), command=cmd)
-            self._build_service.set_prompt_key(self._selected_build_prompt_key())
             self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
 
         except Exception as e:
@@ -1385,6 +1388,19 @@ class MainWindow(QMainWindow):
         if self._build_service.current_handle() and self._build_service.current_handle().is_running():
             self._build_service.cancel()
             self._build_log.append("[编译] 已发送取消请求")
+            
+            # 更新 UI 状态
+            self._build_done = True
+            self._build_status_label.setText("已取消编译")
+            self._build_status_label.setStyleSheet("font-size: 14px; color: #e17055; padding: 10px; font-weight: bold;")
+            self._cancel_build_btn.setEnabled(False)
+            
+            # 更新队列状态（只更新当前编译的项）
+            from executor.build_queue import QueueItemStatus
+            if hasattr(self, '_current_build_queue_id') and self._current_build_queue_id:
+                self._build_queue.update_status(self._current_build_queue_id, QueueItemStatus.CANCELLED)
+                self._logger.info("队列状态已更新为取消: %s", self._current_build_queue_id)
+                self._current_build_queue_id = None
         # 有 shell 会话 → 发送 Ctrl+C
         elif self._shell_channel and self._shell_running:
             self._shell_channel.send("\x03")
@@ -1572,6 +1588,7 @@ class MainWindow(QMainWindow):
                     new_text = " ".join(prefix_words + [common]) if prefix_words else common
                     self._build_input.setText(new_text)
                 else:
+                    pass
 
         except Exception as e:
             self._completion_label.setText(f"[错误] {e}")
@@ -1687,8 +1704,36 @@ class MainWindow(QMainWindow):
         self._build_btn.setText("  开始编译")
         status_text = "编译成功" if status == "succeeded" else "编译失败"
         self._build_log.append(f"\n[编译] {status_text} (退出码: {exit_code})")
+        
+        # 更新队列状态
+        from executor.build_queue import QueueItemStatus
+        if hasattr(self, "_current_build_queue_id") and self._current_build_queue_id:
+            queue_status = QueueItemStatus.SUCCEEDED if status == "succeeded" else QueueItemStatus.FAILED
+            self._build_queue.update_status(self._current_build_queue_id, queue_status, exit_code=exit_code)
+            self._logger.info("队列状态已更新: %s -> %s", self._current_build_queue_id, queue_status.value)
+            self._current_build_queue_id = None
 
-    # ========== AI 分析流程 ==========
+            # 自动连编：成功后取下一个 pending 继续，失败则停止
+            if status == "succeeded" and getattr(self, "_auto_chain", False):
+                pending = self._build_queue.get_pending()
+                if pending:
+                    nxt = pending[0]
+                    self._build_log.append(f"[编译] 自动开始下一个: {nxt.customer_name}")
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(1200, lambda nid=nxt.id: self._start_queue_build(nid, auto_chain=True))
+                else:
+                    self._auto_chain = False
+                    self._build_log.append("[编译] 队列全部编译完成 🎉")
+                    from PySide6.QtWidgets import QMessageBox
+                    self._styled_msg_box(
+                        QMessageBox.Icon.Information, "全部完成",
+                        "编译队列已全部编译完成。"
+                    ).exec()
+            elif status != "succeeded":
+                self._auto_chain = False
+                self._build_log.append("[编译] 编译失败，自动连编已停止")
+
+    # ========== 自动分析流程 ==========
 
     def _on_analyze(self) -> None:
         requirement_text = self.requirement_edit.toPlainText().strip()
@@ -1697,7 +1742,7 @@ class MainWindow(QMainWindow):
             return
 
         self.log_edit.clear()
-        self.log_edit.append("[AI] 正在分析需求…")
+        self.log_edit.append("[自动] 正在分析需求…")
         self.run_button.setEnabled(False)
         self.run_button.setText("分析中…")
 
@@ -1712,16 +1757,16 @@ class MainWindow(QMainWindow):
                 "target_dir": self._target_dir_input.text().strip() if hasattr(self, "_target_dir_input") else "",
             }
             self._current_analysis = ai.analyze(requirement_text, **ctx)
-            self.log_edit.append(f"[AI] 客户: {self._current_analysis.customer}")
-            self.log_edit.append(f"[AI] 平台: {self._current_analysis.platform}")
-            self.log_edit.append(f"[AI] 修改项: {len(self._current_analysis.modifications)} 条")
-            self._logger.info("AI 分析完成: %s", requirement_text[:80])
+            self.log_edit.append(f"[自动] 客户: {self._current_analysis.customer}")
+            self.log_edit.append(f"[自动] 平台: {self._current_analysis.platform}")
+            self.log_edit.append(f"[自动] 修改项: {len(self._current_analysis.modifications)} 条")
+            self._logger.info("自动分析完成: %s", requirement_text[:80])
             self._review_service.request_review(self._current_analysis)
         except Exception as e:
-            self.log_edit.append(f"[错误] AI 分析异常: {e}")
-            self._logger.exception("AI 分析异常")
+            self.log_edit.append(f"[错误] 自动分析异常: {e}")
+            self._logger.exception("自动分析异常")
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
 
     # ========== 审核 ==========
 
@@ -1745,7 +1790,7 @@ class MainWindow(QMainWindow):
             self.log_edit.append(f"[审核] ❌ 已拒绝: {decision.reason}")
             self._switch_mode(0)
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
             return
         self.log_edit.append("[审核] ✅ 已通过，开始执行…")
         from PySide6.QtCore import QTimer
@@ -1815,9 +1860,11 @@ class MainWindow(QMainWindow):
         try:
             fresh_target = self._get_target_path()
             build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
-            self._build_service._external_on_log = self._log_emitter.log_received.emit
+            self._build_service.set_callbacks(
+                on_log=self._log_emitter.log_received.emit,
+                on_finished=lambda status, code: self._log_emitter.finished.emit(status, code),
+            )
             build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
-            self._build_service.set_prompt_key("1")
             self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
             self._build_btn.setEnabled(False)
             self._cancel_build_btn.setEnabled(True)
@@ -1827,7 +1874,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._build_log.append(f"[错误] 自动提交编译失败: {e}")
 
-    # ========== 执行任务（AI 模式）==========
+    # ========== 执行任务（自动模式）==========
 
     def _execute_task(self) -> None:
         try:
@@ -1889,96 +1936,190 @@ class MainWindow(QMainWindow):
                 if f_path.exists():
                     new_content = f_path.read_text(encoding="utf-8")
                     if old_content != new_content:
-                        file_diffs[f_name] = self._compute_line_diff(old_content, new_content)
+                        diffs = self._compute_line_diff(old_content, new_content)
+                        file_diffs[f_name] = diffs
+                        self._logger.info("diff %s: %d 条变更", f_name, len(diffs))
+                    else:
+                        self._logger.info("diff %s: 内容未变化", f_name)
+                else:
+                    self._logger.info("diff %s: 文件不存在", f_name)
 
-            # 显示结果
-            self._result_title.setText("📦 AI 分析执行结果")
-            lines = []
-            lines.append(f"源  目  录: {source_path}")
-            lines.append(f"目标目录: {target_path}  ({'复制' if is_copy else '直接修改'})")
-            lines.append(f"修改项: {len(self._current_analysis.modifications)} 条")
-            lines.append("")
-
-            if warnings:
-                lines.append("⚠ 校验警告:")
-                for w in warnings:
-                    lines.append(f"  - {w}")
-                lines.append("")
-
-            # 收集 ensure 状态
-            ensure_status = self._collect_ensure_status(registry)
-            if ensure_status:
-                lines.append("🔍 自动检查项:")
-                lines.extend(ensure_status)
-                lines.append("")
-
+            # 显示结果（分区色块布局，突出重点）
+            self._result_title.setText("自动分析执行结果")
+            mods = self._current_analysis.modifications
             unique_files = sorted(set(str(f) for f in changed))
+            confirmed_items: list[tuple[str, str, str]] = []
+            for rule in registry.rules:
+                for item in getattr(rule, "confirmed", []):
+                    confirmed_items.append(item)
+            ensure_status = self._collect_ensure_status(registry)
+
+            html_parts: list[str] = []
+
+            # 顶部目标目录（紧凑）
+            tag = "复制" if is_copy else "直接修改"
+            html_parts.append(
+                f'<div style="color:#999;font-size:11px;margin-bottom:4px;">'
+                f'目标目录 <span style="color:#666;">{self._escape_html(str(target_path))}</span>'
+                f' &nbsp;<span style="background:#eef;color:#666;padding:1px 6px;">{tag}</span>'
+                f"</div>"
+            )
+
+            # 校验警告（红色块，最醒目）
+            if warnings:
+                html_parts.append(self._section_header("校验警告", "#fdecea", "#c0392b"))
+                witems = "".join(
+                    f'<div style="padding:1px 0;color:#c0392b;">· {self._escape_html(w)}</div>'
+                    for w in warnings
+                )
+                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{witems}</div>')
+
+            # 修改概要
+            html_parts.append(self._section_header(f"修改概要 · {len(mods)} 项", "#e8f0fe", "#1a56c4"))
+            mod_lines = "".join(
+                f'<div style="padding:1px 0;"><span style="color:#1a56c4;">{i}.</span> '
+                f"{self._escape_html(self._describe_mod(m))}</div>"
+                for i, m in enumerate(mods, 1)
+            )
+            html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{mod_lines}</div>')
+
+            # 确认项（绿色块，已是目标值）
+            if confirmed_items:
+                html_parts.append(self._section_header(
+                    f"确认项 · 已是目标值 · {len(confirmed_items)}", "#e6f4ea", "#1e7e34"))
+                ci = "".join(
+                    f'<div style="padding:1px 0;">'
+                    f'<span style="color:#1e7e34;font-weight:bold;">{self._escape_html(k)}</span>'
+                    f' = <span style="color:#1e7e34;">{self._escape_html(v)}</span>'
+                    f' <span style="color:#aaa;font-size:11px;">{self._escape_html(Path(f_name).name)}</span>'
+                    f"</div>"
+                    for f_name, k, v in confirmed_items
+                )
+                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{ci}</div>')
+
+            # 自动检查项
+            if ensure_status:
+                html_parts.append(self._section_header("自动检查项", "#fff8e1", "#b8860b"))
+                es = "".join(f'<div style="padding:1px 0;">{self._escape_html(line)}</div>' for line in ensure_status)
+                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{es}</div>')
+
+            # 文件变更
             if unique_files:
-                lines.append(f"📝 修改了 {len(unique_files)} 个文件:")
-                for f_path in unique_files:
-                    lines.append(f"  ✏️  {Path(f_path).name}")
-            else:
-                lines.append("📝 无文件被修改")
+                html_parts.append(self._section_header(f"文件变更 · {len(unique_files)}", "#f0f0f0", "#666"))
+                fl = "".join(f'<div style="padding:1px 0;color:#555;">· {self._escape_html(Path(f).name)}</div>' for f in unique_files)
+                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{fl}</div>')
 
-            # HTML 输出
-            html_lines = []
-            for line in lines:
-                html_lines.append(self._escape_html(line))
-
+            # 修改详情 diff（紫色块，重点）
             if file_diffs:
-                html_lines.append("")
-                html_lines.append("<b>📋 修改详情 (diff):</b>")
+                html_parts.append(self._section_header("修改详情", "#f3e8ff", "#6b21a8"))
+                diff_html: list[str] = []
                 for f_name, diffs in file_diffs.items():
-                    html_lines.append(f"<b>  ── {f_name} ──</b>")
+                    diff_html.append(
+                        f'<div style="margin-top:4px;font-weight:bold;color:#6b21a8;">'
+                        f'{self._escape_html(Path(f_name).name)}</div>'
+                    )
                     for old_line, new_line in diffs:
                         if old_line and new_line:
-                            html_lines.append(f'    <span style="color:#888;">- {self._highlight_diff(old_line, new_line, is_old=True)}</span>')
-                            html_lines.append(f'    + {self._highlight_diff(old_line, new_line, is_old=False)}')
+                            diff_html.append(f'<div style="color:#999;">- {self._highlight_diff(old_line, new_line, is_old=True)}</div>')
+                            diff_html.append(f'<div style="color:#1e7e34;">+ {self._highlight_diff(old_line, new_line, is_old=False)}</div>')
                         elif new_line:
-                            html_lines.append(f'    <span style="color:green;font-weight:bold;">+ {self._escape_html(new_line)}</span>')
+                            diff_html.append(f'<div style="color:#1e7e34;font-weight:bold;">+ {self._escape_html(new_line)}</div>')
                         elif old_line:
-                            html_lines.append(f'    <span style="color:#888;text-decoration:line-through;">- {self._escape_html(old_line)}</span>')
+                            diff_html.append(f'<div style="color:#999;text-decoration:line-through;">- {self._escape_html(old_line)}</div>')
+                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{"".join(diff_html)}</div>')
 
-            html_content = "<br>".join(html_lines)
+            html_content = "".join(html_parts)
             self._result_detail.setHtml(
-                '<div style="font-family:Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;">'
+                '<div style="font-family:Menlo,Consolas,monospace;font-size:12px;">'
                 + html_content + "</div>"
             )
 
             self._logger.info("AI 执行完成: source=%s target=%s changed=%d", source_path, target_path, len(changed))
             self._stack.setCurrentIndex(3)
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
 
-            # 自动提交编译（执行完成后重新读取目标目录输入框的值）
-            try:
-                fresh_target = self._get_target_path()
-                build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
-                self._build_service._external_on_log = self._log_emitter.log_received.emit
-                build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
-                self._build_service.set_prompt_key("1")
-                self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
-                self._build_btn.setEnabled(False)
-                self._cancel_build_btn.setEnabled(True)
-                self._build_btn.setText("编译中…")
-                from PySide6.QtCore import QTimer as _QTimer2
-                _QTimer2.singleShot(1200, lambda: self._switch_mode(4))
-            except Exception as e:
-                self._build_log.append(f"[错误] 自动提交编译失败: {e}")
+            # 保存本次执行结果，等用户确认后再加入编译队列
+            self._last_result = {
+                "project_path": str(self._get_target_path()),
+                "modified_files": unique_files,
+                "customer_name": (self._current_analysis.customer
+                                  or self._current_analysis.target_customer_dir)
+                                 if self._current_analysis else "未知",
+                "analysis_summary": (self.requirement_edit.toPlainText()[:200]
+                                     if hasattr(self, "requirement_edit") else ""),
+            }
+            if hasattr(self, "_enqueue_btn"):
+                self._enqueue_btn.setVisible(True)
+                self._enqueue_btn.setEnabled(True)
+                self._enqueue_btn.setText("＋ 加入编译队列")
 
         except FileNotFoundError as e:
             self.log_edit.append(f"[错误] 目录不存在: {e}")
             self._switch_mode(0)
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
         except Exception as e:
             self.log_edit.append(f"[错误] {e}")
             self._logger.exception("执行任务异常")
             self._switch_mode(0)
             self.run_button.setEnabled(True)
-            self.run_button.setText("  AI 分析并提交审核")
+            self.run_button.setText("  自动分析并提交审核")
+
+    def _enqueue_current_result(self) -> None:
+        """用户在结果页点击「加入编译队列」后执行。"""
+        if not getattr(self, "_last_result", None):
+            return
+        try:
+            r = self._last_result
+            self._build_queue.add(
+                customer_name=r["customer_name"],
+                project_path=r["project_path"],
+                modified_files=r["modified_files"],
+                analysis_summary=r["analysis_summary"],
+            )
+            self.log_edit.append(f"[队列] 已加入编译队列: {r['customer_name']}")
+            self._enqueue_btn.setEnabled(False)
+            self._enqueue_btn.setText("✓ 已加入队列")
+            from PySide6.QtWidgets import QMessageBox
+            self._styled_msg_box(
+                QMessageBox.Icon.Information, "已加入编译队列",
+                f"客户 [{r['customer_name']}] 已加入编译队列。\n"
+                f"请到「编译队列」页面点击「开始编译」。"
+            ).exec()
+            self._last_result = None
+        except Exception as e:
+            self.log_edit.append(f"[错误] 加入编译队列失败: {e}")
+            self._logger.exception("加入编译队列失败")
 
     # ========== Diff 工具 ==========
+
+    def _describe_mod(self, mod: dict) -> str:
+        """把一条修改项翻译成人话。"""
+        from ui.review_panel import ReviewPanel
+        return ReviewPanel._describe_mod(ReviewPanel.__new__(ReviewPanel), mod)
+
+    def _styled_msg_box(self, icon, title, text):
+        """创建白底 QMessageBox，绕过 macOS 原生深色弹窗。"""
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(icon)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setStyleSheet(
+            "QMessageBox { background: #ffffff; }"
+            "QMessageBox QLabel { color: #1a1a1a; background: transparent; font-size: 13px; }"
+            "QMessageBox QPushButton { background: #e0e0e0; color: #1a1a1a; border: none; "
+            "border-radius: 6px; padding: 6px 18px; font-size: 13px; min-width: 60px; }"
+            "QMessageBox QPushButton:hover { background: #d5d5d5; }"
+        )
+        return box
+
+    def _section_header(self, title: str, bg: str, color: str) -> str:
+        """生成分区色块标题。"""
+        return (f'<div style="background:{bg};color:{color};font-weight:bold;'
+                f'padding:4px 10px;margin-top:8px;font-size:12px;">'
+                f'{self._escape_html(title)}</div>')
 
     def _escape_html(self, text: str) -> str:
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -2005,6 +2146,9 @@ class MainWindow(QMainWindow):
             elif tag == "delete":
                 for old_l in old_lines[i1:i2]:
                     diffs.append((old_l.strip(), ""))
+        # 兜底：splitlines 后相同但字符串不同，说明只是换行符/末尾空白差异
+        if not diffs and old_content != new_content:
+            diffs.append(("（仅换行符/空白差异）", "（已规范化）"))
         return diffs
 
     def _highlight_diff(self, old_line: str, new_line: str, is_old: bool) -> str:
@@ -2035,6 +2179,94 @@ class MainWindow(QMainWindow):
                 parts.append(f'<span style="color:#888;text-decoration:line-through;">{self._escape_html(text)}</span>')
 
         return "".join(parts)
+
+    def _on_queue_build_requested(self, queue_id: str) -> None:
+        """卡片「开始编译」：单个编译，完成后停止。"""
+        self._start_queue_build(queue_id, auto_chain=False)
+
+    def _on_build_all(self) -> None:
+        """「全部开始编译」：依次串行，成功后自动接下一个。"""
+        pending = self._build_queue.get_pending()
+        if not pending:
+            return
+        self._start_queue_build(pending[0].id, auto_chain=True)
+
+    def _start_queue_build(self, queue_id: str, auto_chain: bool = False) -> None:
+        try:
+            self._auto_chain = auto_chain
+            self._logger.info("=== _start_queue_build: %s (auto_chain=%s) ===", queue_id, auto_chain)
+            item = self._build_queue.get_by_id(queue_id)
+            if not item:
+                self._logger.error("队列项不存在: %s", queue_id)
+                return
+            
+            self._logger.info("从队列开始编译: %s", item.customer_name)
+            
+            # 检查同一项目（code 目录）是否已在编译
+            # 提取项目名：/home/user/352_AN12_MP3/code/... -> 352_AN12_MP3
+            def _extract_proj_name(path):
+                parts = [p for p in path.replace('/', ' ').split() if p]
+                if 'code' in parts:
+                    idx = parts.index('code')
+                    if idx > 0:
+                        return parts[idx - 1]
+                return ''
+            
+            cur_proj = _extract_proj_name(item.project_path)
+            all_items = self._build_queue.get_all()
+            for qi in all_items:
+                if qi.id != queue_id and qi.status.value == "building":
+                    qi_proj = _extract_proj_name(qi.project_path)
+                    if cur_proj and qi_proj == cur_proj:
+                        self._logger.warning("同一项目已在编译: %s", qi.customer_name)
+                        from PySide6.QtWidgets import QMessageBox
+                        self._styled_msg_box(
+                            QMessageBox.Icon.Warning, "编译冲突",
+                            f"项目 [{cur_proj}] 正在被 [{qi.customer_name}] 编译中，请等待完成后再试。"
+                        ).exec()
+                        return
+            
+            # 检查是否已有编译任务在运行
+            handle = self._build_service.current_handle()
+            if handle and handle.is_running():
+                self._build_log.append("[编译] 已有编译任务在运行")
+                return
+            
+            # 更新队列状态
+            self._build_queue.update_status(queue_id, "building")
+            self._logger.info("队列状态已更新")
+            
+            # 切换到编译页面
+            self._switch_mode(4)
+            self._build_status_label.setText(f"正在编译: {item.project_path}")
+            self._build_log.clear()
+            self._build_log.append(f"[编译] 客户: {item.customer_name}")
+            self._build_log.append(f"[编译] 路径: {item.project_path}")
+            self._cancel_build_btn.setEnabled(True)
+            self._build_done = False
+            self._current_build_queue_id = queue_id
+            
+            # 设置日志回调
+            def on_log(text):
+                self._log_emitter.log_received.emit(text)
+            self._build_service.set_callbacks(
+                on_log=on_log,
+                on_finished=lambda status, code: self._log_emitter.finished.emit(status, code),
+            )
+            
+            # 提交编译
+            build_cmd = self._build_default_compile_command(target_path=item.project_path)
+            # 同步编译命令输入框，让用户看到实际执行的命令
+            if hasattr(self, "_build_cmd_input"):
+                self._build_cmd_input.setText(build_cmd)
+            self._logger.info("提交编译: %s", build_cmd)
+            build_job = self._build_service.submit(item.project_path, command=build_cmd)
+            self._build_queue.update_status(queue_id, "building", task_id=build_job.task_id)
+            self._build_log.append(f"[编译] 任务ID: {build_job.task_id}")
+            self._logger.info("编译已提交: %s", build_job.task_id)
+        except Exception as e:
+            self._logger.error("编译启动失败: %s", e, exc_info=True)
+            self._build_log.append(f"[错误] {e}")
 
     def on_run(self) -> None:
         self._on_analyze()

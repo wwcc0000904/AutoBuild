@@ -705,18 +705,39 @@ class RulePanel(QWidget):
         for key, inp in self._params_inputs.items():
             inp.setText(str(params.get(key, "")))
         self._form_group.setVisible(True)
-        params = rule.get("params", {})
-        for key, inp in self._params_inputs.items():
-            inp.setText(str(params.get(key, "")))
-        self._form_group.setVisible(True)
+
+    def _styled_msg(self, icon, title, text, buttons=None):
+        """白底弹窗。"""
+        box = QMessageBox(self)
+        box.setIcon(icon)
+        box.setWindowTitle(title)
+        box.setText(text)
+        if buttons:
+            box.setStandardButtons(buttons)
+        box.setStyleSheet(
+            "QMessageBox { background: #ffffff; }"
+            "QMessageBox QLabel { color: #1a1a1a; background: transparent; font-size: 13px; }"
+            "QMessageBox QPushButton { background: #e0e0e0; color: #1a1a1a; border: none; "
+            "border-radius: 6px; padding: 6px 18px; font-size: 13px; min-width: 60px; }"
+            "QMessageBox QPushButton:hover { background: #d5d5d5; }"
+        )
+        return box
 
     def _on_delete(self, rule: dict):
-        ret = QMessageBox.question(
-            self, "确认删除", f"确定要删除规则「{rule.get('name', '')}」吗？",
+        rule_id = rule.get("id")
+        if not rule_id:
+            self._styled_msg(
+                QMessageBox.Icon.Warning, "无法删除",
+                "该规则没有 id（可能是旧数据），请手动编辑 config/custom_rules.json。",
+            ).exec()
+            return
+        ret = self._styled_msg(
+            QMessageBox.Icon.Question, "确认删除",
+            f"确定要删除规则「{rule.get('name', '')}」吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
+        ).exec()
         if ret == QMessageBox.StandardButton.Yes:
-            delete_rule(rule["id"])
+            delete_rule(rule_id)
             self._refresh_list()
 
     def _on_save(self):
@@ -724,15 +745,31 @@ class RulePanel(QWidget):
         keywords = self._keywords_input.text().strip()
         rule_type = self._type_combo.currentData()
         if not name:
-            QMessageBox.warning(self, "提示", "请填写规则名称")
+            self._styled_msg(QMessageBox.Icon.Warning, "提示", "请填写规则名称").exec()
             return
+        if not keywords:
+            self._styled_msg(QMessageBox.Icon.Warning, "提示", "请填写触发关键词").exec()
+            return
+        # 必填参数校验
+        from rules.custom_rule_manager import RULE_TYPES
+        required = RULE_TYPES.get(rule_type, {}).get("required", [])
         params = {}
         for key, inp in self._params_inputs.items():
             val = inp.text().strip()
             if val:
                 params[key] = val
+        for rkey in required:
+            if not params.get(rkey):
+                self._styled_msg(
+                    QMessageBox.Icon.Warning, "参数缺失",
+                    f"请填写必填参数: {rkey}",
+                ).exec()
+                return
+        # preinstall 的 enabled 规范化为 bool
+        if rule_type == "preinstall" and "enabled" in params:
+            params["enabled"] = str(params["enabled"]).lower() in ("true", "y", "1", "yes")
         rule = {"name": name, "keywords": keywords, "rule_type": rule_type, "params": params}
-        if self._editing_rule:
+        if self._editing_rule and self._editing_rule.get("id"):
             rule["id"] = self._editing_rule["id"]
         save_rule(rule)
         self._form_group.setVisible(False)
