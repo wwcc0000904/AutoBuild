@@ -135,57 +135,39 @@ class ManualPanel(QWidget):
         gl = QVBoxLayout(card)
         gl.setSpacing(6)
 
-        self._switches: dict[str, QComboBox] = {}
+        # 功能开关 → 复选框（三态：未选中=不修改，半选=关闭，全选=打开）
+        self._switches: dict[str, QCheckBox] = {}
         open_map = self._feature_mapping.get("open", {})
-        for keyword, info in open_map.items():
-            row = QHBoxLayout()
-            row.setSpacing(8)
-            lbl = QLabel(keyword)
-            lbl.setFixedWidth(80)
-            lbl.setStyleSheet(f"font-size: 12px; color: {_CLR_TEXT}; background: transparent;")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            row.addWidget(lbl)
-            combo = QComboBox()
-            combo.addItems(["不修改", "打开", "关闭"])
-            combo.setStyleSheet(_combo_style())
-            _fix_combo(combo)
-            row.addWidget(combo, 1)
-            gl.addLayout(row)
-            self._switches[keyword] = combo
+        for keyword in open_map:
+            cb = QCheckBox(keyword)
+            cb.setTristate(True)
+            cb.setCheckState(Qt.CheckState.PartiallyChecked)  # 默认"不修改"
+            cb.setToolTip(f"✓ 打开 / ✗ 关闭 / — 不修改（点击切换）")
+            cb.setStyleSheet(f"color: {_CLR_TEXT}; background: transparent; spacing: 6px;")
+            gl.addWidget(cb)
+            self._switches[keyword] = cb
 
         # 蓝屏
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        lbl = QLabel("蓝屏")
-        lbl.setFixedWidth(80)
-        lbl.setStyleSheet(f"font-size: 12px; color: {_CLR_TEXT}; background: transparent;")
-        lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(lbl)
-        self._blue_screen_combo = QComboBox()
-        self._blue_screen_combo.addItems(["不修改", "打开 (1)", "关闭 (0)"])
-        self._blue_screen_combo.setStyleSheet(_combo_style())
-        _fix_combo(self._blue_screen_combo)
-        row.addWidget(self._blue_screen_combo, 1)
-        gl.addLayout(row)
+        cb = QCheckBox("蓝屏")
+        cb.setTristate(True)
+        cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        cb.setToolTip("✓ 打开蓝屏 / ✗ 关闭蓝屏 / — 不修改")
+        cb.setStyleSheet(f"color: {_CLR_TEXT}; background: transparent; spacing: 6px;")
+        gl.addWidget(cb)
+        self._blue_screen_cb = cb
         main.addWidget(card)
 
         # ── 卡片：预装应用 ──
         card = QGroupBox("  📦 预装应用")
         card.setStyleSheet(_card_style())
         gl = QVBoxLayout(card)
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        lbl = QLabel("ESharePlus")
-        lbl.setFixedWidth(80)
-        lbl.setStyleSheet(f"font-size: 12px; color: {_CLR_TEXT}; background: transparent;")
-        lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(lbl)
-        self._preinstall_combo = QComboBox()
-        self._preinstall_combo.addItems(["不修改", "预装 (Y)", "取消预装 (n)"])
-        self._preinstall_combo.setStyleSheet(_combo_style())
-        _fix_combo(self._preinstall_combo)
-        row.addWidget(self._preinstall_combo, 1)
-        gl.addLayout(row)
+        cb = QCheckBox("ESharePlus")
+        cb.setTristate(True)
+        cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        cb.setToolTip("✓ 预装 / ✗ 取消预装 / — 不修改")
+        cb.setStyleSheet(f"color: {_CLR_TEXT}; background: transparent; spacing: 6px;")
+        gl.addWidget(cb)
+        self._preinstall_cb = cb
         main.addWidget(card)
 
         # ── 卡片：白名单 ──
@@ -223,25 +205,17 @@ class ManualPanel(QWidget):
             card = QGroupBox("  🔧 菜单项 (ctvsetting.xml)")
             card.setStyleSheet(_card_style())
             gl = QVBoxLayout(card)
-            gl.setSpacing(6)
-            self._menu_combos: dict[str, QComboBox] = {}
+            gl.setSpacing(4)
+            self._menu_cbs: dict[str, tuple[QCheckBox, str]] = {}
             for cn_name, entry in menu_map.items():
-                # 兼容新旧格式
                 en_name = entry.get("name", cn_name) if isinstance(entry, dict) else entry
-                row = QHBoxLayout()
-                row.setSpacing(8)
-                lbl = QLabel(cn_name)
-                lbl.setFixedWidth(80)
-                lbl.setStyleSheet(f"font-size: 12px; color: {_CLR_TEXT}; background: transparent;")
-                lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                row.addWidget(lbl)
-                combo = QComboBox()
-                combo.addItems(["不修改", "显示 (support)", "隐藏 (hide)"])
-                combo.setStyleSheet(_combo_style())
-                _fix_combo(combo)
-                row.addWidget(combo, 1)
-                gl.addLayout(row)
-                self._menu_combos[cn_name] = (combo, en_name)
+                cb = QCheckBox(cn_name)
+                cb.setTristate(True)
+                cb.setCheckState(Qt.CheckState.PartiallyChecked)
+                cb.setToolTip(f"✓ 显示 / ✗ 隐藏 / — 不修改")
+                cb.setStyleSheet(f"color: {_CLR_TEXT}; background: transparent; spacing: 6px;")
+                gl.addWidget(cb)
+                self._menu_cbs[cn_name] = (cb, en_name)
             main.addWidget(card)
 
         # ── 卡片：属性修改 ──
@@ -290,7 +264,6 @@ class ManualPanel(QWidget):
         _ctv_options = [
             ("开机桌面", "_boot_desktop_combo", ["不修改", "安卓 (0)", "TV (1)", "记忆 (2)"]),
             ("菜单显示时间", "_menu_time_combo", ["不修改", "一直显示 (0)", "5秒 (1)", "10秒 (2)", "20秒 (3)", "30秒 (4)", "60秒 (5)"]),
-            ("语言显示", "_lang_country_combo", ["不修改", "带国家 (true)", "不带国家 (false)"]),
         ]
         for label, attr, items in _ctv_options:
             row = QHBoxLayout()
@@ -307,6 +280,15 @@ class ManualPanel(QWidget):
             row.addWidget(combo, 1)
             gl.addLayout(row)
             setattr(self, attr, combo)
+
+        # 语言显示 → 复选框
+        cb = QCheckBox("语言显示国家")
+        cb.setTristate(True)
+        cb.setCheckState(Qt.CheckState.PartiallyChecked)
+        cb.setToolTip("✓ 带国家 / ✗ 不带国家 / — 不修改")
+        cb.setStyleSheet(f"color: {_CLR_TEXT}; background: transparent; spacing: 6px;")
+        gl.addWidget(cb)
+        self._lang_country_cb = cb
         main.addWidget(card)
 
         # ── 卡片：默认语言/国家 ──
@@ -499,12 +481,12 @@ class ManualPanel(QWidget):
         mods: list[dict] = []
         mapping = self._feature_mapping
 
-        # --- 功能开关 ---
-        for keyword, combo in self._switches.items():
-            idx = combo.currentIndex()
-            if idx == 0:
-                continue
-            section = "open" if idx == 1 else "close"
+        # --- 功能开关（三态复选框：未选=关闭，半选=不修改，全选=打开）---
+        for keyword, cb in self._switches.items():
+            state = cb.checkState()
+            if state == Qt.CheckState.PartiallyChecked:
+                continue  # 不修改
+            section = "open" if state == Qt.CheckState.Checked else "close"
             mod_info = mapping.get(section, {}).get(keyword)
             if mod_info:
                 mod_type = "db_ini" if mod_info["file"].startswith("configs/") else "build_config"
@@ -514,17 +496,17 @@ class ManualPanel(QWidget):
                 mods.append(entry)
 
         # --- 蓝屏 ---
-        bs_idx = self._blue_screen_combo.currentIndex()
-        if bs_idx == 1:
+        bs_state = self._blue_screen_cb.checkState()
+        if bs_state == Qt.CheckState.Checked:
             mods.append({"type": "db_ini", "file": "configs/db.ini", "key": "System_screencolor", "value": "1"})
-        elif bs_idx == 2:
+        elif bs_state == Qt.CheckState.Unchecked:
             mods.append({"type": "db_ini", "file": "configs/db.ini", "key": "System_screencolor", "value": "0"})
 
         # --- 预装 ---
-        pi_idx = self._preinstall_combo.currentIndex()
-        if pi_idx == 1:
+        pi_state = self._preinstall_cb.checkState()
+        if pi_state == Qt.CheckState.Checked:
             mods.append({"type": "preinstall", "app": "ESharePlus", "enabled": True})
-        elif pi_idx == 2:
+        elif pi_state == Qt.CheckState.Unchecked:
             mods.append({"type": "preinstall", "app": "ESharePlus", "enabled": False})
 
         # --- 白名单 ---
@@ -535,12 +517,12 @@ class ManualPanel(QWidget):
             if self._pkg_remove.isChecked():
                 mods.append({"type": "whitelist", "package": pkg, "action": "remove"})
 
-        # --- 菜单项 ---
-        for cn_name, (combo, en_name) in self._menu_combos.items():
-            idx = combo.currentIndex()
-            if idx == 0:
+        # --- 菜单项（三态复选框）---
+        for cn_name, (cb, en_name) in self._menu_cbs.items():
+            state = cb.checkState()
+            if state == Qt.CheckState.PartiallyChecked:
                 continue
-            enable = "support" if idx == 1 else "hide"
+            enable = "support" if state == Qt.CheckState.Checked else "hide"
             prefix = cn_name in ("蓝牙",)
             mods.append({"type": "ctv_setting", "name": en_name, "enable": enable, "prefix": prefix})
 
@@ -568,11 +550,11 @@ class ManualPanel(QWidget):
         if mt_idx in time_map:
             mods.append({"type": "ctv_data", "name": "MenuShowTime", "value": time_map[mt_idx]})
 
-        # --- 语言显示 ---
-        lc_idx = self._lang_country_combo.currentIndex()
-        if lc_idx == 1:
+        # --- 语言显示（三态复选框）---
+        lc_state = self._lang_country_cb.checkState()
+        if lc_state == Qt.CheckState.Checked:
             mods.append({"type": "ctv_data", "name": "LanguageShowCountry", "value": "true"})
-        elif lc_idx == 2:
+        elif lc_state == Qt.CheckState.Unchecked:
             mods.append({"type": "ctv_data", "name": "LanguageShowCountry", "value": "false"})
 
         # --- 默认语言 ---
