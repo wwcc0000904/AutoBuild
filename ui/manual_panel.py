@@ -792,11 +792,11 @@ class ManualPanel(QWidget):
         mods: list[dict] = []
         fm = self._fm
 
-        # 功能开关
+        # 功能开关（只收集有变化的）
         for kw, (row, key) in self._bc_toggles.items():
-            sel = row.get_selected()
-            if sel is None:
+            if not row.is_changed():
                 continue
+            sel = row.get_selected()
             section = "open" if sel == "打开" else "close"
             info = fm.get(section, {}).get(kw)
             if info:
@@ -817,39 +817,39 @@ class ManualPanel(QWidget):
             mods.append({"type": "build_config", "file": "build_config.txt",
                          "key": "CTV_CFG_CUSTOMER", "value": v, "mode": "value"})
 
-        # 蓝屏
-        sel = self._db_blue.get_selected()
-        if sel:
+        # 蓝屏（只收集有变化的）
+        if self._db_blue.is_changed():
+            sel = self._db_blue.get_selected()
             mods.append({"type": "db_ini", "file": "configs/db.ini", "key": "System_screencolor",
                          "value": "1" if sel == "打开蓝屏" else "0"})
 
         # 上电模式
-        sel = self._prop_power.get_selected()
-        if sel:
+        if self._prop_power.is_changed():
+            sel = self._prop_power.get_selected()
             pm = {"待机": "secondary", "开机": "direct", "记忆": "memory"}
             mods.append({"type": "prop", "file": "ctvbuild.prop", "key": "ro.product.powermode", "value": pm.get(sel, sel)})
 
         # 开机模式
-        sel = self._prop_boot.get_selected()
-        if sel:
+        if self._prop_boot.is_changed():
+            sel = self._prop_boot.get_selected()
             bm = {"动画": "0", "视频": "1"}
             mods.append({"type": "prop", "file": "ctvbuild.prop", "key": "persist.sys.bootanimation.type", "value": bm.get(sel, sel)})
 
         # 开机桌面
-        sel = self._ctv_desktop.get_selected()
-        if sel:
+        if self._ctv_desktop.is_changed():
+            sel = self._ctv_desktop.get_selected()
             dm = {"安卓": "0", "TV": "1", "记忆": "2"}
             mods.append({"type": "ctv_data", "name": "BootDesktop", "value": dm.get(sel, sel)})
 
         # 菜单显示时间
-        sel = self._ctv_menu_time.get_selected()
-        if sel:
+        if self._ctv_menu_time.is_changed():
+            sel = self._ctv_menu_time.get_selected()
             tm = {"一直显示": "0", "5秒": "1", "10秒": "2", "20秒": "3", "30秒": "4", "60秒": "5"}
             mods.append({"type": "ctv_data", "name": "MenuShowTime", "value": tm.get(sel, sel)})
 
         # 语言显示
-        sel = self._ctv_lang.get_selected()
-        if sel:
+        if self._ctv_lang.is_changed():
+            sel = self._ctv_lang.get_selected()
             mods.append({"type": "ctv_data", "name": "LanguageShowCountry",
                          "value": "true" if sel == "带国家" else "false"})
 
@@ -865,17 +865,18 @@ class ManualPanel(QWidget):
             if code:
                 mods.append({"type": "country_list_first", "country_code": code})
 
-        # 菜单项
+        # 菜单项（只收集有变化的）
         for cn, (row, en) in self._ctv_menu_rows.items():
+            if not row.is_changed():
+                continue
             sel = row.get_selected()
-            if sel:
-                mods.append({"type": "ctv_setting", "name": en,
-                             "enable": "support" if sel == "显示" else "hide",
-                             "prefix": cn in ("蓝牙",)})
+            mods.append({"type": "ctv_setting", "name": en,
+                         "enable": "support" if sel == "显示" else "hide",
+                         "prefix": cn in ("蓝牙",)})
 
-        # 预装
-        sel = self._pre_eshare.get_selected()
-        if sel:
+        # 预装（只收集有变化的）
+        if self._pre_eshare.is_changed():
+            sel = self._pre_eshare.get_selected()
             mods.append({"type": "preinstall", "app": "ESharePlus",
                          "enabled": sel == "预装"})
 
