@@ -31,7 +31,7 @@ class RemoteConfigReader:
         self._cache: dict[str, str] = {}  # 文件内容缓存
 
     def _read(self, file_key: str) -> Optional[str]:
-        """读取文件内容（带缓存）。"""
+        """读取文件内容（带缓存，自动尝试多种编码）。"""
         if file_key in self._cache:
             return self._cache[file_key]
         rel = _PATHS.get(file_key)
@@ -41,7 +41,16 @@ class RemoteConfigReader:
         try:
             if not path.exists():
                 return None
-            content = path.read_text(encoding="utf-8")
+            # 尝试多种编码
+            for enc in ("utf-8", "gbk", "gb2312", "latin-1"):
+                try:
+                    content = path.read_text(encoding=enc)
+                    self._cache[file_key] = content
+                    return content
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+            # 最后用 latin-1（永远不会失败）
+            content = path.read_text(encoding="latin-1")
             self._cache[file_key] = content
             return content
         except Exception as e:

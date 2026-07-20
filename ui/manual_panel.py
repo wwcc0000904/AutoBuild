@@ -247,10 +247,12 @@ class _LoaderThread(QThread):
         super().__init__(parent)
         self._ssh = ssh_client
         self._path = source_path
+        self._logger = get_logger()
 
     def run(self):
         try:
             r = RemoteConfigReader(self._ssh, self._path)
+            self._logger.info("开始加载远程配置: %s", self._path)
             data = {}
 
             # build_config.txt
@@ -258,48 +260,60 @@ class _LoaderThread(QThread):
                        "CTV_CFG_TVCASTING", "CTV_CFG_ESHARE", "CTV_CFG_PANEL_BACKLIGHT_CURRENT",
                        "CTV_CFG_CUSTOMER"]
             data["build_config"] = r.read_build_config(bc_keys)
+            self._logger.info("build_config: %s", data["build_config"])
 
             # db.ini
             data["db_ini"] = r.read_db_ini(["System_screencolor"])
+            self._logger.info("db_ini: %s", data["db_ini"])
 
-            # 白平衡（查找 FacColorTemp_*_nature 行）
+            # 白平衡
             data["color_temp"] = r.read_color_temp()
+            self._logger.info("color_temp: %s", data["color_temp"])
 
-            # NLA 参数（6 个）
+            # NLA 参数
             nla_keys = [f"NlaInfo_{p}" for p in ("brightness", "contrast", "saturation", "sharpness", "hue", "backlight")]
             data["nla"] = r.read_db_ini(nla_keys)
+            self._logger.info("nla: %s", data["nla"])
 
             # SatGain / HueGain / BriGain
             data["sat_gain"] = r.read_gain("SatGain")
             data["hue_gain"] = r.read_gain("HueGain")
             data["bri_gain"] = r.read_gain("BriGain")
+            self._logger.info("gain: sat=%s hue=%s bri=%s", data["sat_gain"], data["hue_gain"], data["bri_gain"])
 
             # ctvbuild.prop
             data["prop"] = r.read_prop(["ro.product.powermode", "persist.sys.bootanimation.type"])
+            self._logger.info("prop: %s", data["prop"])
 
             # ctv_data.xml
             data["ctv_data"] = r.read_ctv_data(["BootDesktop", "MenuShowTime", "LanguageShowCountry"])
+            self._logger.info("ctv_data: %s", data["ctv_data"])
 
-            # 默认语言（从 CtvLanguage.ini 第一行读取）
+            # 默认语言
             data["language_first"] = r.read_language_first()
+            self._logger.info("language_first: %s", data["language_first"])
 
             # CountryList
             data["country_list"] = r.read_country_list()
+            self._logger.info("country_list: %d 个", len(data["country_list"]))
 
             # ctvsetting.xml
             en_names = ["tv kernel", "tv sdk", "tv resolution", "tv software", "tv hardware", "tv model", "tv bluetooth"]
             data["ctv_setting"] = r.read_ctv_setting(en_names)
+            self._logger.info("ctv_setting: %s", data["ctv_setting"])
 
             # 预装
             data["preinstall"] = {"ESharePlus": r.read_preinstall("ESharePlus") or "—"}
 
             # 白名单
             data["whitelist"] = r.read_whitelist_packages()
+            self._logger.info("whitelist: %d 个", len(data["whitelist"]))
 
+            self._logger.info("远程配置加载完成")
             self.loaded.emit(data)
         except Exception as e:
-            from config.logging_setup import get_logger
-            get_logger().error("加载远程配置失败: %s", e)
+            self._logger.error("加载远程配置失败: %s", e, exc_info=True)
+            self.loaded.emit({})
             self.loaded.emit({})
 
 
