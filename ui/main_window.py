@@ -879,6 +879,30 @@ class MainWindow(QMainWindow):
             source = self._get_source_path()
             if hasattr(self, "_build_cmd_input"):
                 self._build_cmd_input.setText(self._build_default_compile_command())
+            # 读取当前目录的 CountryList，过滤手动面板的国家下拉
+            self._refresh_country_list()
+
+    def _refresh_country_list(self) -> None:
+        """从远程 ctv_data.xml 读取 CountryList，过滤手动面板国家选项。"""
+        if not self._ssh_client:
+            return
+        source = self._get_source_path()
+        xml_rel = "overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+        try:
+            import shlex
+            cmd = f"cat {shlex.quote(str(source) + '/' + xml_rel)} 2>/dev/null"
+            stdin, stdout, stderr = self._ssh_client.exec_command(cmd, timeout=10)
+            content = stdout.read().decode("utf-8", errors="replace")
+            if not content:
+                return
+            import re
+            m = re.search(r'name="CountryList"\s+item="([^"]+)"', content)
+            if m:
+                codes = [c.strip() for c in m.group(1).split(",")]
+                self._manual_page.filter_country_list(codes)
+                self._logger.info("CountryList 已过滤: %d 个国家", len(codes))
+        except Exception as e:
+            self._logger.warning("读取 CountryList 失败: %s", e)
 
     def _on_target_dir_changed(self, _text: str) -> None:
         """目标目录输入框变化时，自动刷新编译命令。"""

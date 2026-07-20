@@ -279,14 +279,16 @@ class ManualPanel(QWidget):
         self._default_lang = (row._cb, row._control)
 
         country_combo = _combo(["(请选择)"])
+        self._country_map: dict[str, str] = {}
         country_map_path = Path("config/country_map.json")
         if country_map_path.exists():
-            country_map = json.loads(country_map_path.read_text(encoding="utf-8"))
-            for code, name in country_map.items():
+            self._country_map = json.loads(country_map_path.read_text(encoding="utf-8"))
+            for code, name in self._country_map.items():
                 country_combo.addItem(f"{name} ({code})", code)
         row = OptionRow("默认国家", country_combo)
         gl.addWidget(row)
         self._default_country = (row._cb, row._control)
+        self._country_combo = country_combo
         lay.addWidget(card)
 
         # ── 白名单 ──
@@ -411,6 +413,20 @@ class ManualPanel(QWidget):
             f" padding: 8px; font-family: Menlo,Consolas,monospace; font-size: 12px; }}"
         )
         lay.addWidget(self._preview_edit)
+
+    # ========== 国家过滤 ==========
+
+    def filter_country_list(self, allowed_codes: list[str]) -> None:
+        """只保留 CountryList 中存在的国家。"""
+        combo = self._country_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("(请选择)")
+        allowed_upper = {c.upper() for c in allowed_codes}
+        for code, name in self._country_map.items():
+            if code.upper() in allowed_upper:
+                combo.addItem(f"{name} ({code})", code)
+        combo.blockSignals(False)
 
     # ========== 收集 ==========
 
