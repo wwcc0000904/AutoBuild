@@ -1,46 +1,60 @@
-"""手动修改面板 — 按文件分页卡片布局。"""
+"""手动模式面板 — 插件卡片 + 当前值展示 + 直接编辑。"""
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QThread
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
-    QPushButton, QComboBox, QCheckBox, QGroupBox, QScrollArea,
-    QSpinBox, QStackedWidget, QListView,
+    QPushButton, QComboBox, QGroupBox, QScrollArea, QStackedWidget, QListView,
+    QSizePolicy,
 )
 
 import qtawesome as qta
 from config.logging_setup import get_logger
+from remote_config_reader import RemoteConfigReader
 
 
 # ── 样式 ──────────────────────────────────────────────────
-_CLR = {
+_C = {
     "bg": "#e0e3ed", "card": "#ffffff", "border": "#e5e5e5",
-    "text": "#1a1a1a", "dim": "#888888", "accent": "#333333",
-    "input_border": "#dcdcdc",
+    "text": "#1a1a1a", "dim": "#999999", "blue": "#4a90d9",
+    "green": "#27ae60", "orange": "#e67e22", "input_border": "#dcdcdc",
 }
 
 
-def _card(title: str) -> QGroupBox:
-    g = QGroupBox(f"  {title}")
+def _card(title: str, subtitle: str = "") -> QGroupBox:
+    g = QGroupBox()
     g.setStyleSheet(
-        f"QGroupBox {{ background: {_CLR['card']}; border: 1px solid {_CLR['border']};"
-        f" border-radius: 12px; padding: 20px 16px 10px 16px; margin-top: 18px;"
-        f" font-size: 13px; font-weight: bold; color: {_CLR['text']}; }}"
+        f"QGroupBox {{ background: {_C['card']}; border: 1px solid {_C['border']};"
+        f" border-radius: 12px; padding: 20px 16px 12px 16px; margin-top: 18px; }}"
         f"QGroupBox::title {{ subcontrol-origin: margin; left: 16px; padding: 0 8px; }}"
     )
     return g
 
 
-def _lbl(text: str, w: int = 0, bold: bool = False, dim: bool = False) -> QLabel:
+def _card_layout(card: QGroupBox, title: str, subtitle: str = "") -> QVBoxLayout:
+    """给卡片设置布局，加标题和副标题，返回内容布局。"""
+    lay = QVBoxLayout(card)
+    lay.setSpacing(2)
+    t = QLabel(title)
+    t.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {_C['text']}; background: transparent;")
+    lay.addWidget(t)
+    if subtitle:
+        s = QLabel(subtitle)
+        s.setStyleSheet(f"font-size: 11px; color: {_C['dim']}; background: transparent;")
+        lay.addWidget(s)
+    lay.addSpacing(6)
+    return lay
+
+
+def _lbl(text: str, w: int = 0, bold: bool = False, dim: bool = False, size: int = 12) -> QLabel:
     l = QLabel(text)
-    c = _CLR["dim"] if dim else _CLR["text"]
+    c = _C["dim"] if dim else _C["text"]
     wt = "bold" if bold else "normal"
-    l.setStyleSheet(f"font-size:12px; color:{c}; background:transparent; font-weight:{wt};")
+    l.setStyleSheet(f"font-size:{size}px; color:{c}; background:transparent; font-weight:{wt};")
     if w:
         l.setFixedWidth(w)
     return l
@@ -50,8 +64,8 @@ def _combo(items: list[str]) -> QComboBox:
     c = QComboBox()
     c.addItems(items)
     c.setStyleSheet(
-        f"QComboBox{{background:#fff;color:{_CLR['text']};border:1px solid {_CLR['input_border']};"
-        f"border-radius:6px;padding:5px 10px;font-size:12px;}}"
+        f"QComboBox{{background:#fff;color:{_C['text']};border:1px solid {_C['input_border']};"
+        f"border-radius:6px;padding:5px 10px;font-size:12px;min-width:120px;}}"
         f"QComboBox:hover{{border-color:#aaa;}}QComboBox::drop-down{{border:none;width:20px;}}"
     )
     v = QListView()
@@ -65,94 +79,268 @@ def _combo(items: list[str]) -> QComboBox:
     return c
 
 
-def _cb(text: str) -> QCheckBox:
-    c = QCheckBox(text)
-    c.setStyleSheet(f"QCheckBox{{color:{_CLR['text']};background:transparent;spacing:6px;font-size:12px;}}")
-    return c
-
-
-def _spin(lo=0, hi=999, ph="--") -> QSpinBox:
-    s = QSpinBox(); s.setRange(lo, hi); s.setSpecialValueText(ph); s.setValue(0)
-    s.setStyleSheet(f"QSpinBox{{background:#fff;color:{_CLR['text']};border:1px solid {_CLR['input_border']};"
-                    f"border-radius:6px;padding:4px 8px;font-size:12px;}}QSpinBox:focus{{border-color:{_CLR['accent']};}}")
-    return s
-
-
-def _input(ph="") -> QLineEdit:
-    e = QLineEdit(); e.setPlaceholderText(ph)
-    e.setStyleSheet(f"QLineEdit{{background:transparent;color:{_CLR['text']};border:1px solid {_CLR['input_border']};"
-                    f"border-radius:6px;padding:6px 10px;font-size:12px;}}QLineEdit:focus{{border-color:{_CLR['accent']};}}")
+def _input(ph: str = "") -> QLineEdit:
+    e = QLineEdit()
+    e.setPlaceholderText(ph)
+    e.setMinimumWidth(120)
+    e.setStyleSheet(
+        f"QLineEdit{{background:#fff;color:{_C['text']};border:1px solid {_C['input_border']};"
+        f"border-radius:6px;padding:5px 10px;font-size:12px;}}"
+        f"QLineEdit:focus{{border-color:{_C['blue']};}}"
+    )
     return e
 
 
 def _hline() -> QLabel:
-    s = QLabel(); s.setFixedHeight(1); s.setStyleSheet(f"background:{_CLR['border']};margin:6px 0;")
+    s = QLabel(); s.setFixedHeight(1)
+    s.setStyleSheet(f"background:{_C['border']};margin:4px 0;")
     return s
 
 
-# ── OptionRow ─────────────────────────────────────────────
-class OptionRow(QWidget):
-    """[✓] 标签  控件 — 勾选后控件才激活。"""
-    def __init__(self, label: str, control: QWidget, parent=None):
-        super().__init__(parent)
-        self._control = control
-        lay = QHBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(10)
-        self._cb = _cb(""); self._cb.setFixedWidth(20); self._cb.toggled.connect(lambda c: control.setEnabled(c))
-        lay.addWidget(self._cb)
-        lay.addWidget(_lbl(label, w=90))
-        lay.addWidget(control, 1)
-        control.setEnabled(False)
+# ── ToggleRow：名称 + 当前值 + 按钮组 ───────────────────
+class ToggleRow(QWidget):
+    """一行：名称 | 当前值 | [选项1] [选项2]"""
 
-    def is_checked(self) -> bool: return self._cb.isChecked()
-    def value(self):
-        if not self._cb.isChecked(): return None
-        if isinstance(self._control, QComboBox): return self._control.currentIndex()
-        if isinstance(self._control, QSpinBox): return self._control.value()
-        if isinstance(self._control, QLineEdit): return self._control.text().strip()
-        if isinstance(self._control, QCheckBox): return self._control.isChecked()
+    value_changed = Signal()
+
+    def __init__(self, name: str, options: list[str], parent=None):
+        super().__init__(parent)
+        self._options = options
+        self._original: Optional[str] = None
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(8)
+
+        # 名称
+        self._name_lbl = _lbl(name, w=110)
+        lay.addWidget(self._name_lbl)
+
+        # 当前值
+        self._current_lbl = _lbl("—", w=80, dim=True)
+        lay.addWidget(self._current_lbl)
+
+        lay.addWidget(_lbl("→", w=16, dim=True))
+
+        # 按钮组
+        self._btns: list[QPushButton] = []
+        for opt in options:
+            btn = QPushButton(opt)
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(self._btn_style(False))
+            btn.clicked.connect(lambda _, b=btn, o=opt: self._on_click(b))
+            lay.addWidget(btn)
+            self._btns.append(btn)
+
+        lay.addStretch()
+
+    def set_current(self, value: str, mapping: dict[str, str] = None):
+        """设置当前值显示。mapping: {内部值 → 显示文本}。"""
+        self._original = value
+        if mapping:
+            display = mapping.get(value, value)
+        else:
+            display = value
+        self._current_lbl.setText(display)
+        # 自动选中对应的按钮
+        for i, btn in enumerate(self._btns):
+            btn.setChecked(False)
+            btn.setStyleSheet(self._btn_style(False))
+        # 如果当前值匹配某个选项，高亮它
+        for i, opt in enumerate(self._options):
+            if opt == display or (mapping and mapping.get(value) == opt):
+                self._btns[i].setChecked(True)
+                self._btns[i].setStyleSheet(self._btn_style(True))
+
+    def _on_click(self, clicked_btn: QPushButton):
+        for btn in self._btns:
+            btn.setChecked(btn is clicked_btn)
+            btn.setStyleSheet(self._btn_style(btn is clicked_btn))
+        self._current_lbl.setStyleSheet(
+            f"font-size:12px;color:{_C['blue']};background:transparent;font-weight:bold;")
+        self.value_changed.emit()
+
+    def get_selected(self) -> Optional[str]:
+        for i, btn in enumerate(self._btns):
+            if btn.isChecked():
+                return self._options[i]
         return None
+
+    def is_changed(self) -> bool:
+        return self.get_selected() is not None and self.get_selected() != self._original
+
+    def get_new_value(self) -> Optional[str]:
+        """返回用户选择的新值（如果不同于原始值）。"""
+        sel = self.get_selected()
+        if sel is not None and sel != self._original:
+            return sel
+        return None
+
+    @staticmethod
+    def _btn_style(active: bool) -> str:
+        if active:
+            return ("QPushButton{background:#4a90d9;color:#fff;border:none;"
+                    "border-radius:6px;padding:5px 14px;font-size:12px;font-weight:bold;}"
+                    "QPushButton:hover{background:#3a7bc8;}")
+        return ("QPushButton{background:#f5f5f5;color:#666;border:1px solid #e0e0e0;"
+                "border-radius:6px;padding:5px 14px;font-size:12px;}"
+                "QPushButton:hover{background:#e8e8e8;color:#333;}")
+
+
+# ── EditRow：名称 + 当前值 + 输入框 ──────────────────────
+class EditRow(QWidget):
+    """一行：名称 | 当前值 | [输入框]"""
+
+    value_changed = Signal()
+
+    def __init__(self, name: str, placeholder: str = "", parent=None):
+        super().__init__(parent)
+        self._original: Optional[str] = None
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(8)
+
+        self._name_lbl = _lbl(name, w=110)
+        lay.addWidget(self._name_lbl)
+
+        self._current_lbl = _lbl("—", w=80, dim=True)
+        lay.addWidget(self._current_lbl)
+
+        lay.addWidget(_lbl("→", w=16, dim=True))
+
+        self._input = _input(placeholder)
+        self._input.textChanged.connect(self._on_change)
+        lay.addWidget(self._input, 1)
+        lay.addStretch()
+
+    def set_current(self, value: str):
+        self._original = value
+        self._current_lbl.setText(value if value else "—")
+        self._input.setText("")
+
+    def _on_change(self, text: str):
+        if text and text != self._original:
+            self._current_lbl.setStyleSheet(
+                f"font-size:12px;color:{_C['blue']};background:transparent;font-weight:bold;")
+        else:
+            self._current_lbl.setStyleSheet(
+                f"font-size:12px;color:{_C['dim']};background:transparent;")
+        self.value_changed.emit()
+
+    def get_new_value(self) -> Optional[str]:
+        text = self._input.text().strip()
+        if text and text != self._original:
+            return text
+        return None
+
+    def is_changed(self) -> bool:
+        return self.get_new_value() is not None
+
+
+# ── LoaderThread：后台加载远程配置 ────────────────────────
+class _LoaderThread(QThread):
+    loaded = Signal(dict)  # {file_key: {key: value}}
+
+    def __init__(self, ssh_client, source_path: str, parent=None):
+        super().__init__(parent)
+        self._ssh = ssh_client
+        self._path = source_path
+
+    def run(self):
+        try:
+            r = RemoteConfigReader(self._ssh, self._path)
+            data = {}
+
+            # build_config.txt
+            bc_keys = ["CTV_CFG_DOLBY", "CTV_CFG_MIRACAST", "CTV_CFG_HBG_XYDZ21001",
+                       "CTV_CFG_TVCASTING", "CTV_CFG_ESHARE", "CTV_CFG_PANEL_BACKLIGHT_CURRENT",
+                       "CTV_CFG_CUSTOMER"]
+            data["build_config"] = r.read_build_config(bc_keys)
+
+            # db.ini
+            data["db_ini"] = r.read_db_ini(["System_screencolor"])
+
+            # ctvbuild.prop
+            data["prop"] = r.read_prop(["ro.product.powermode", "persist.sys.bootanimation.type"])
+
+            # ctv_data.xml
+            data["ctv_data"] = r.read_ctv_data(["BootDesktop", "MenuShowTime", "LanguageShowCountry"])
+
+            # ctvsetting.xml
+            en_names = ["tv kernel", "tv sdk", "tv resolution", "tv software", "tv hardware", "tv model", "tv bluetooth"]
+            data["ctv_setting"] = r.read_ctv_setting(en_names)
+
+            # 预装
+            data["preinstall"] = {"ESharePlus": r.read_preinstall("ESharePlus") or "—"}
+
+            # 白名单
+            data["whitelist"] = r.read_whitelist_packages()
+
+            self.loaded.emit(data)
+        except Exception as e:
+            from config.logging_setup import get_logger
+            get_logger().error("加载远程配置失败: %s", e)
+            self.loaded.emit({})
 
 
 # ── ManualPanel ───────────────────────────────────────────
 
 class ManualPanel(QWidget):
-    """手动修改面板：按修改文件分页，每页一张卡片。"""
+    """手动模式面板：插件卡片 + 当前值 + 直接编辑。"""
 
     execute_requested = Signal(list)
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._logger = get_logger()
         self._fm = self._load_mapping()
+        self._current_data: dict = {}
+        self._ssh = None
+        self._source_path = ""
         self._build_ui()
 
     def _load_mapping(self) -> dict:
         p = Path("config/feature_mapping.json")
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
+    # ── 加载远程配置 ──
+
+    def load_values(self, ssh_client, source_path: str):
+        """异步加载远程配置值。"""
+        self._ssh = ssh_client
+        self._source_path = source_path
+        self._loader = _LoaderThread(ssh_client, source_path, self)
+        self._loader.loaded.connect(self._on_loaded)
+        self._loader.start()
+
+    def _on_loaded(self, data: dict):
+        self._current_data = data
+        self._populate_values(data)
+
+    # ── UI 构建 ──
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(0,0,0,0)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
 
-        # ── 页码导航 ──
-        nav = QWidget()
-        nav.setStyleSheet("background: transparent;")
-        nav_lay = QHBoxLayout(nav)
-        nav_lay.setContentsMargins(0, 4, 0, 4)
-        nav_lay.setSpacing(6)
+        # 页码导航
+        nav = QWidget(); nav.setStyleSheet("background:transparent;")
+        nav_lay = QHBoxLayout(nav); nav_lay.setContentsMargins(0,4,0,4); nav_lay.setSpacing(6)
 
-        self._pages_info: list[tuple[str, str]] = [
-            ("build_config.txt",     "功能开关 + 参数"),
-            ("db.ini",              "蓝屏 + 高级参数"),
-            ("ctvbuild.prop",       "上电/开机模式"),
-            ("ctv_data.xml",        "桌面/菜单/语言/国家"),
-            ("ctvsetting.xml",      "菜单项显示/隐藏"),
-            ("whiteList.conf",      "白名单"),
-            ("build_ctv_app.txt",   "预装应用"),
+        self._page_defs = [
+            ("build_config.txt", "功能开关 + 参数"),
+            ("db.ini", "蓝屏 + 高级参数"),
+            ("ctvbuild.prop", "上电/开机模式"),
+            ("ctv_data.xml", "桌面/菜单/语言"),
+            ("ctvsetting.xml", "菜单项"),
+            ("whiteList.conf", "白名单"),
+            ("build_ctv_app.txt", "预装应用"),
         ]
         self._nav_btns: list[QPushButton] = []
-        for i, (fname, tip) in enumerate(self._pages_info):
+        for i, (fname, tip) in enumerate(self._page_defs):
             btn = QPushButton(f" {fname}")
             btn.setToolTip(tip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -163,21 +351,19 @@ class ManualPanel(QWidget):
         nav_lay.addStretch()
         root.addWidget(nav)
 
-        # ── 页面堆叠 ──
+        # 页面堆叠
         self._stack = QStackedWidget()
-        self._stack.setStyleSheet("background: transparent;")
-
-        self._stack.addWidget(self._page_build_config())
-        self._stack.addWidget(self._page_db_ini())
-        self._stack.addWidget(self._page_prop())
-        self._stack.addWidget(self._page_ctv_data())
-        self._stack.addWidget(self._page_ctv_setting())
-        self._stack.addWidget(self._page_whitelist())
-        self._stack.addWidget(self._page_preinstall())
-
+        self._stack.setStyleSheet("background:transparent;")
+        self._build_page_build_config()
+        self._build_page_db_ini()
+        self._build_page_prop()
+        self._build_page_ctv_data()
+        self._build_page_ctv_setting()
+        self._build_page_whitelist()
+        self._build_page_preinstall()
         root.addWidget(self._stack, 1)
 
-        # ── 底部按钮 ──
+        # 底部按钮
         btn_row = QHBoxLayout(); btn_row.setSpacing(10); btn_row.addStretch()
 
         preview_btn = QPushButton("  预览")
@@ -202,7 +388,7 @@ class ManualPanel(QWidget):
         self._preview_edit.setReadOnly(True); self._preview_edit.setMaximumHeight(90)
         self._preview_edit.setPlaceholderText("点击「预览」查看将要执行的修改…")
         self._preview_edit.setStyleSheet(
-            f"QTextEdit{{background:transparent;color:{_CLR['text']};border:1px solid {_CLR['input_border']};"
+            f"QTextEdit{{background:transparent;color:{_C['text']};border:1px solid {_C['input_border']};"
             f"border-radius:8px;padding:8px;font-family:Menlo,Consolas,monospace;font-size:12px;}}")
         root.addWidget(self._preview_edit)
 
@@ -222,290 +408,297 @@ class ManualPanel(QWidget):
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(self._nav_style(i == idx))
 
-    # ================================================================
-    #  Page 1: build_config.txt — 功能开关 + 电流 + 客户
-    # ================================================================
-    def _page_build_config(self) -> QWidget:
+    # ── 页面构建 ──
+
+    def _make_scroll(self) -> tuple[QScrollArea, QVBoxLayout]:
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         body = QWidget(); body.setStyleSheet("background:transparent;")
         lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
-
-        # 功能开关
-        card = _card("功能开关 (build_config.txt)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        self._switch_rows: dict[str, tuple[QCheckBox, QComboBox]] = {}
-        for kw in self._fm.get("open", {}):
-            row = OptionRow(kw, _combo(["打开", "关闭"]))
-            gl.addWidget(row)
-            self._switch_rows[kw] = (row._cb, row._control)
-        lay.addWidget(card)
-
-        # 电流
-        card = _card("电流 (CTV_CFG_PANEL_BACKLIGHT_CURRENT)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("电流值", _spin(0, 9999, "不修改"))
-        gl.addWidget(row)
-        self._current = (row._cb, row._control)
-        lay.addWidget(card)
-
-        # 客户名称
-        card = _card("客户名称 (CTV_CFG_CUSTOMER)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("客户名称", _input("不修改则留空"))
-        gl.addWidget(row)
-        self._customer = (row._cb, row._control)
-        lay.addWidget(card)
-
-        lay.addStretch()
         scroll.setWidget(body)
-        return scroll
+        return scroll, lay
 
-    # ================================================================
-    #  Page 2: db.ini — 蓝屏 + 白平衡 + NLA + Gain
-    # ================================================================
-    def _page_db_ini(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 1: build_config.txt ──
+    def _build_page_build_config(self):
+        scroll, lay = self._make_scroll()
+        card = _card("build_config.txt", "路径: build_config.txt")
+        gl = _card_layout(card, "build_config.txt", "路径: build_config.txt"); gl.setSpacing(2)
 
-        # 蓝屏
-        card = _card("蓝屏开关 (System_screencolor)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("蓝屏", _combo(["打开蓝屏 (1)", "关闭蓝屏 (0)"]))
-        gl.addWidget(row)
-        self._blue_screen = (row._cb, row._control)
+        self._bc_toggles: dict[str, ToggleRow] = {}
+        fm_open = self._fm.get("open", {})
+        for kw, info in fm_open.items():
+            if info.get("file", "") == "build_config.txt":
+                row = ToggleRow(kw, ["打开", "关闭"])
+                gl.addWidget(row)
+                self._bc_toggles[kw] = (row, info["key"])
+
+        gl.addWidget(_hline())
+
+        self._bc_current = EditRow("电流", "mA 数值")
+        gl.addWidget(self._bc_current)
+
+        self._bc_customer = EditRow("客户名称", "客户名")
+        gl.addWidget(self._bc_customer)
+
+        lay.addWidget(card)
+        lay.addStretch()
+        self._stack.addWidget(scroll)
+
+    # ── Page 2: db.ini ──
+    def _build_page_db_ini(self):
+        scroll, lay = self._make_scroll()
+        card = _card("db.ini", "路径: configs/db.ini")
+        gl = _card_layout(card, "db.ini", "路径: configs/db.ini"); gl.setSpacing(2)
+
+        self._db_blue = ToggleRow("蓝屏", ["打开蓝屏", "关闭蓝屏"])
+        gl.addWidget(self._db_blue)
         lay.addWidget(card)
 
-        # 白平衡
-        card = _card("白平衡 (FacColorTemp nature)")
-        gl = QVBoxLayout(card); gl.setSpacing(8)
-        gl.addWidget(_lbl("R Gain / G Gain / B Gain / R Offset / G Offset / B Offset", bold=True))
-        wb_row = QHBoxLayout(); wb_row.setSpacing(6)
-        self._wb_inputs: list[QSpinBox] = []
-        for tag in ["R", "G", "B", "R_O", "G_O", "B_O"]:
-            sp = _spin(0, 999, "--"); sp.setPrefix(f"{tag}:"); sp.setMinimumWidth(70)
-            wb_row.addWidget(sp); self._wb_inputs.append(sp)
-        gl.addLayout(wb_row)
-        lay.addWidget(card)
+        # 高级参数
+        card2 = _card("高级参数", "路径: configs/db.ini")
+        gl2 = QVBoxLayout(card2); gl2.setSpacing(2)
 
-        # NLA
-        card = _card("NLA 非线性参数")
-        gl = QVBoxLayout(card); gl.setSpacing(8)
-        nla_row = QHBoxLayout(); nla_row.setSpacing(8)
         self._nla_param = _combo(["brightness", "contrast", "saturation", "sharpness", "hue", "backlight"])
-        nla_row.addWidget(self._nla_param)
-        nla_row.addWidget(_lbl("中间值:", w=50))
-        self._nla_value = _spin(0, 999, "--"); nla_row.addWidget(self._nla_value)
-        gl.addLayout(nla_row)
-        lay.addWidget(card)
+        self._nla_value = _input("中间值")
+        row = QHBoxLayout(); row.setSpacing(8)
+        row.addWidget(_lbl("NLA 参数", w=110))
+        row.addWidget(self._nla_param)
+        row.addWidget(_lbl("中间值 →", w=60, dim=True))
+        row.addWidget(self._nla_value)
+        gl2.addLayout(row)
 
-        # Gain
-        for name, attr in [("SatGain", "_sat_gain"), ("HueGain", "_hue_gain"), ("BriGain", "_bri_gain")]:
-            card = _card(f"{name} (前7值)")
-            gl = QVBoxLayout(card); gl.setSpacing(4)
-            row_lay = QHBoxLayout(); row_lay.setSpacing(4)
-            inputs: list[QSpinBox] = []
-            for i in range(7):
-                sp = _spin(-99, 99, "--"); sp.setMinimumWidth(55)
-                row_lay.addWidget(sp); inputs.append(sp)
-            gl.addLayout(row_lay)
-            setattr(self, attr, inputs)
-            lay.addWidget(card)
-
+        lay.addWidget(card2)
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  Page 3: ctvbuild.prop — 上电模式 + 开机模式
-    # ================================================================
-    def _page_prop(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 3: ctvbuild.prop ──
+    def _build_page_prop(self):
+        scroll, lay = self._make_scroll()
+        card = _card("ctvbuild.prop", "路径: ctvbuild.prop")
+        gl = _card_layout(card, "ctvbuild.prop", "路径: ctvbuild.prop"); gl.setSpacing(2)
 
-        card = _card("上电模式 (ro.product.powermode)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("上电模式", _combo(["待机 (secondary)", "开机 (direct)", "记忆 (memory)"]))
-        gl.addWidget(row)
-        self._power_mode = (row._cb, row._control)
+        self._prop_power = ToggleRow("上电模式", ["待机", "开机", "记忆"])
+        gl.addWidget(self._prop_power)
+
+        self._prop_boot = ToggleRow("开机模式", ["动画", "视频"])
+        gl.addWidget(self._prop_boot)
+
         lay.addWidget(card)
-
-        card = _card("开机模式 (persist.sys.bootanimation.type)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("开机模式", _combo(["动画 (0)", "视频 (1)"]))
-        gl.addWidget(row)
-        self._boot_mode = (row._cb, row._control)
-        lay.addWidget(card)
-
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  Page 4: ctv_data.xml — 开机桌面/菜单时间/语言显示/国家/语言
-    # ================================================================
-    def _page_ctv_data(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 4: ctv_data.xml ──
+    def _build_page_ctv_data(self):
+        scroll, lay = self._make_scroll()
+        card = _card("ctv_data.xml", "路径: overlay/.../ctv_data.xml")
+        gl = _card_layout(card, "ctv_data.xml", "路径: overlay/.../ctv_data.xml"); gl.setSpacing(2)
 
-        card = _card("开机桌面 (BootDesktop)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("开机桌面", _combo(["安卓 (0)", "TV (1)", "记忆 (2)"]))
-        gl.addWidget(row)
-        self._boot_desktop = (row._cb, row._control)
-        lay.addWidget(card)
+        self._ctv_desktop = ToggleRow("开机桌面", ["安卓", "TV", "记忆"])
+        gl.addWidget(self._ctv_desktop)
 
-        card = _card("菜单显示时间 (MenuShowTime)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("显示时间", _combo(["一直显示 (0)", "5秒 (1)", "10秒 (2)", "20秒 (3)", "30秒 (4)", "60秒 (5)"]))
-        gl.addWidget(row)
-        self._menu_time = (row._cb, row._control)
-        lay.addWidget(card)
+        self._ctv_menu_time = ToggleRow("菜单显示时间", ["一直显示", "5秒", "10秒", "20秒", "30秒", "60秒"])
+        gl.addWidget(self._ctv_menu_time)
 
-        card = _card("语言显示国家 (LanguageShowCountry)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("语言显示", _combo(["带国家 (true)", "不带国家 (false)"]))
-        gl.addWidget(row)
-        self._lang_country = (row._cb, row._control)
-        lay.addWidget(card)
+        self._ctv_lang = ToggleRow("语言显示国家", ["带国家", "不带国家"])
+        gl.addWidget(self._ctv_lang)
+
+        gl.addWidget(_hline())
 
         # 默认语言
-        card = _card("默认语言 (CtvLanguage.ini)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        lang_combo = _combo(["(请选择)"])
+        lang_combo = _combo(["(当前值)"])
         lang_map_path = Path("config/language_map.json")
         if lang_map_path.exists():
             for code, info in json.loads(lang_map_path.read_text(encoding="utf-8")).items():
                 lang_combo.addItem(f"{info['name']} ({code})", code)
-        row = OptionRow("默认语言", lang_combo)
-        gl.addWidget(row)
-        self._default_lang = (row._cb, row._control)
-        lay.addWidget(card)
+        self._ctv_lang_combo = lang_combo
+        row = QHBoxLayout(); row.setSpacing(8)
+        row.addWidget(_lbl("默认语言", w=110))
+        row.addWidget(_lbl("当前:", w=36, dim=True))
+        self._ctv_lang_current = _lbl("—", w=100, dim=True)
+        row.addWidget(self._ctv_lang_current)
+        row.addWidget(_lbl("→", w=16, dim=True))
+        row.addWidget(lang_combo)
+        gl.addLayout(row)
 
         # 默认国家
-        card = _card("默认国家 (CountryList)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        country_combo = _combo(["(请选择)"])
+        country_combo = _combo(["(当前值)"])
         self._country_map: dict[str, str] = {}
         country_map_path = Path("config/country_map.json")
         if country_map_path.exists():
             self._country_map = json.loads(country_map_path.read_text(encoding="utf-8"))
             for code, name in self._country_map.items():
                 country_combo.addItem(f"{name} ({code})", code)
-        row = OptionRow("默认国家", country_combo)
-        gl.addWidget(row)
-        self._default_country = (row._cb, row._control)
-        self._country_combo = country_combo
+        self._ctv_country_combo = country_combo
+        row = QHBoxLayout(); row.setSpacing(8)
+        row.addWidget(_lbl("默认国家", w=110))
+        row.addWidget(_lbl("当前:", w=36, dim=True))
+        self._ctv_country_current = _lbl("—", w=100, dim=True)
+        row.addWidget(self._ctv_country_current)
+        row.addWidget(_lbl("→", w=16, dim=True))
+        row.addWidget(country_combo)
+        gl.addLayout(row)
+
         lay.addWidget(card)
-
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  Page 5: ctvsetting.xml — 菜单项
-    # ================================================================
-    def _page_ctv_setting(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 5: ctvsetting.xml ──
+    def _build_page_ctv_setting(self):
+        scroll, lay = self._make_scroll()
+        card = _card("ctvsetting.xml", "路径: configs/ctvsetting.xml")
+        gl = _card_layout(card, "ctvsetting.xml", "路径: configs/ctvsetting.xml"); gl.setSpacing(2)
 
         menu_map = self._fm.get("ctv_setting_menu", {})
-        card = _card("菜单项显示/隐藏 (ctvsetting.xml)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        self._menu_rows: dict[str, tuple[QCheckBox, QComboBox, str]] = {}
+        self._ctv_menu_rows: dict[str, tuple[ToggleRow, str]] = {}
         for cn_name, entry in menu_map.items():
             en_name = entry.get("name", cn_name) if isinstance(entry, dict) else entry
-            row = OptionRow(cn_name, _combo(["显示", "隐藏"]))
+            row = ToggleRow(cn_name, ["显示", "隐藏"])
             gl.addWidget(row)
-            self._menu_rows[cn_name] = (row._cb, row._control, en_name)
+            self._ctv_menu_rows[cn_name] = (row, en_name)
+
         lay.addWidget(card)
-
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  Page 6: whiteList.conf — 白名单
-    # ================================================================
-    def _page_whitelist(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 6: whiteList.conf ──
+    def _build_page_whitelist(self):
+        scroll, lay = self._make_scroll()
+        card = _card("whiteList.conf", "路径: etc/whiteList.conf")
+        gl = _card_layout(card, "whiteList.conf", "路径: etc/whiteList.conf"); gl.setSpacing(6)
 
-        card = _card("白名单 (whiteList.conf)")
-        gl = QVBoxLayout(card); gl.setSpacing(8)
+        self._wl_current_lbl = _lbl("当前白名单: 加载中…", dim=True)
+        self._wl_current_lbl.setWordWrap(True)
+        gl.addWidget(self._wl_current_lbl)
 
-        pkg_row = QHBoxLayout(); pkg_row.setSpacing(10)
-        pkg_row.addWidget(_lbl("包名", w=60))
-        self._pkg_input = _input("例如: com.android.vending")
-        pkg_row.addWidget(self._pkg_input, 1)
-        gl.addLayout(pkg_row)
+        gl.addWidget(_hline())
 
-        action_row = QHBoxLayout(); action_row.setSpacing(16); action_row.addSpacing(70)
-        self._pkg_add = _cb("添加到白名单")
-        self._pkg_remove = _cb("从白名单移除")
-        action_row.addWidget(self._pkg_add)
-        action_row.addWidget(self._pkg_remove)
-        action_row.addStretch()
-        gl.addLayout(action_row)
+        self._wl_pkg = _input("包名，如 com.android.vending")
+        row = QHBoxLayout(); row.setSpacing(8)
+        row.addWidget(_lbl("包名", w=60))
+        row.addWidget(self._wl_pkg, 1)
+        gl.addLayout(row)
+
+        btn_row = QHBoxLayout(); btn_row.setSpacing(10)
+        self._wl_add = QPushButton("  添加")
+        self._wl_add.setStyleSheet(
+            "QPushButton{background:#27ae60;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;}"
+            "QPushButton:hover{background:#219a52;}")
+        self._wl_remove = QPushButton("  移除")
+        self._wl_remove.setStyleSheet(
+            "QPushButton{background:#e74c3c;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:12px;}"
+            "QPushButton:hover{background:#c0392b;}")
+        btn_row.addStretch()
+        btn_row.addWidget(self._wl_add)
+        btn_row.addWidget(self._wl_remove)
+        gl.addLayout(btn_row)
+
         lay.addWidget(card)
-
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  Page 7: build_ctv_app.txt — 预装
-    # ================================================================
-    def _page_preinstall(self) -> QWidget:
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        body = QWidget(); body.setStyleSheet("background:transparent;")
-        lay = QVBoxLayout(body); lay.setContentsMargins(0,0,0,0); lay.setSpacing(14)
+    # ── Page 7: build_ctv_app.txt ──
+    def _build_page_preinstall(self):
+        scroll, lay = self._make_scroll()
+        card = _card("build_ctv_app.txt", "路径: build_ctv_app.txt")
+        gl = _card_layout(card, "build_ctv_app.txt", "路径: build_ctv_app.txt"); gl.setSpacing(2)
 
-        card = _card("预装应用 (build_ctv_app.txt)")
-        gl = QVBoxLayout(card); gl.setSpacing(4)
-        row = OptionRow("ESharePlus", _combo(["预装 (Y)", "取消预装 (n)"]))
-        gl.addWidget(row)
-        self._preinstall = (row._cb, row._control)
+        self._pre_eshare = ToggleRow("ESharePlus", ["预装", "取消预装"])
+        gl.addWidget(self._pre_eshare)
+
         lay.addWidget(card)
-
         lay.addStretch()
-        scroll.setWidget(body)
-        return scroll
+        self._stack.addWidget(scroll)
 
-    # ================================================================
-    #  CountryList 过滤
-    # ================================================================
+    def _switch_page(self, idx: int):
+        self._stack.setCurrentIndex(idx)
+        for i, btn in enumerate(self._nav_btns):
+            btn.setStyleSheet(self._nav_style(i == idx))
+
+    # ── 填充当前值 ──
+
+    def _populate_values(self, data: dict):
+        """用远程读取的数据填充所有行的当前值。"""
+        # build_config.txt
+        bc = data.get("build_config", {})
+        for kw, (row, key) in self._bc_toggles.items():
+            val = bc.get(key, "")
+            display = "打开" if val.lower() == "y" else "关闭" if val.lower() == "n" else val or "—"
+            row.set_current(display)
+
+        val = bc.get("CTV_CFG_PANEL_BACKLIGHT_CURRENT", "")
+        self._bc_current.set_current(val or "—")
+
+        val = bc.get("CTV_CFG_CUSTOMER", "")
+        self._bc_customer.set_current(val or "—")
+
+        # db.ini
+        db = data.get("db_ini", {})
+        val = db.get("System_screencolor", "")
+        bs_display = "打开蓝屏" if val == "1" else "关闭蓝屏" if val == "0" else val or "—"
+        self._db_blue.set_current(bs_display)
+
+        # prop
+        prop = data.get("prop", {})
+        val = prop.get("ro.product.powermode", "")
+        pm_map = {"secondary": "待机", "direct": "开机", "memory": "记忆"}
+        self._prop_power.set_current(pm_map.get(val, val or "—"))
+
+        val = prop.get("persist.sys.bootanimation.type", "")
+        bm_map = {"0": "动画", "1": "视频"}
+        self._prop_boot.set_current(bm_map.get(val, val or "—"))
+
+        # ctv_data
+        ctd = data.get("ctv_data", {})
+        val = ctd.get("BootDesktop", "")
+        bd_map = {"0": "安卓", "1": "TV", "2": "记忆"}
+        self._ctv_desktop.set_current(bd_map.get(val, val or "—"))
+
+        val = ctd.get("MenuShowTime", "")
+        mt_map = {"0": "一直显示", "1": "5秒", "2": "10秒", "3": "20秒", "4": "30秒", "5": "60秒"}
+        self._ctv_menu_time.set_current(mt_map.get(val, val or "—"))
+
+        val = ctd.get("LanguageShowCountry", "")
+        lc_map = {"true": "带国家", "false": "不带国家"}
+        self._ctv_lang.set_current(lc_map.get(val, val or "—"))
+
+        # ctvsetting
+        cs = data.get("ctv_setting", {})
+        for cn_name, (row, en_name) in self._ctv_menu_rows.items():
+            val = cs.get(en_name, "")
+            cs_map = {"support": "显示", "hide": "隐藏"}
+            row.set_current(cs_map.get(val, val or "—"))
+
+        # 预装
+        pi = data.get("preinstall", {})
+        val = pi.get("ESharePlus", "—")
+        pi_map = {"Y": "预装", "N": "取消预装"}
+        self._pre_eshare.set_current(pi_map.get(val, val or "—"))
+
+        # 白名单
+        pkgs = data.get("whitelist", [])
+        self._wl_current_lbl.setText(f"当前白名单 ({len(pkgs)} 个): {', '.join(pkgs[:10])}{'…' if len(pkgs) > 10 else ''}")
+
     def filter_country_list(self, allowed_codes: list[str]) -> None:
-        combo = self._country_combo
-        combo.blockSignals(True); combo.clear(); combo.addItem("(请选择)")
+        combo = self._ctv_country_combo
+        combo.blockSignals(True); combo.clear(); combo.addItem("(当前值)")
         allowed = {c.upper() for c in allowed_codes}
         for code, name in self._country_map.items():
             if code.upper() in allowed:
                 combo.addItem(f"{name} ({code})", code)
         combo.blockSignals(False)
 
-    # ================================================================
-    #  收集修改项
-    # ================================================================
+    # ── 收集修改项 ──
+
     def collect_modifications(self) -> list[dict]:
         mods: list[dict] = []
         fm = self._fm
 
         # 功能开关
-        for kw, (cb, combo) in self._switch_rows.items():
-            if not cb.isChecked(): continue
-            section = "open" if combo.currentIndex() == 0 else "close"
+        for kw, (row, key) in self._bc_toggles.items():
+            sel = row.get_selected()
+            if sel is None:
+                continue
+            section = "open" if sel == "打开" else "close"
             info = fm.get(section, {}).get(kw)
             if info:
                 t = "db_ini" if info["file"].startswith("configs/") else "build_config"
@@ -513,103 +706,101 @@ class ManualPanel(QWidget):
                 if t == "build_config": e["mode"] = "value"
                 mods.append(e)
 
-        # 蓝屏
-        cb, combo = self._blue_screen
-        if cb.isChecked():
-            mods.append({"type": "db_ini", "file": "configs/db.ini", "key": "System_screencolor",
-                         "value": "1" if combo.currentIndex() == 0 else "0"})
-
-        # 预装
-        cb, combo = self._preinstall
-        if cb.isChecked():
-            mods.append({"type": "preinstall", "app": "ESharePlus", "enabled": combo.currentIndex() == 0})
-
-        # 菜单项
-        for cn, (cb, combo, en) in self._menu_rows.items():
-            if not cb.isChecked(): continue
-            mods.append({"type": "ctv_setting", "name": en,
-                         "enable": "support" if combo.currentIndex() == 0 else "hide",
-                         "prefix": cn in ("蓝牙",)})
-
-        # 属性
-        for (cb, combo), key, vm in [
-            (self._power_mode, "ro.product.powermode", ["secondary", "direct", "memory"]),
-            (self._boot_mode, "persist.sys.bootanimation.type", ["0", "1"]),
-        ]:
-            if cb.isChecked():
-                mods.append({"type": "prop", "file": "ctvbuild.prop", "key": key, "value": vm[combo.currentIndex()]})
-
-        # CTV Data
-        for (cb, combo), name, vm in [
-            (self._boot_desktop, "BootDesktop", ["0", "1", "2"]),
-            (self._menu_time, "MenuShowTime", ["0", "1", "2", "3", "4", "5"]),
-        ]:
-            if cb.isChecked():
-                mods.append({"type": "ctv_data", "name": name, "value": vm[combo.currentIndex()]})
-
-        cb, combo = self._lang_country
-        if cb.isChecked():
-            mods.append({"type": "ctv_data", "name": "LanguageShowCountry",
-                         "value": "true" if combo.currentIndex() == 0 else "false"})
-
-        # 语言 & 国家
-        cb, combo = self._default_lang
-        if cb.isChecked() and combo.currentIndex() > 0:
-            code = combo.currentData()
-            if code: mods.append({"type": "language_first", "target": code})
-
-        cb, combo = self._default_country
-        if cb.isChecked() and combo.currentIndex() > 0:
-            code = combo.currentData()
-            if code: mods.append({"type": "country_list_first", "country_code": code})
-
-        # 白名单
-        pkg = self._pkg_input.text().strip()
-        if pkg:
-            if self._pkg_add.isChecked():
-                mods.append({"type": "whitelist", "package": pkg, "action": "add"})
-            if self._pkg_remove.isChecked():
-                mods.append({"type": "whitelist", "package": pkg, "action": "remove"})
-
         # 电流
-        cb, sp = self._current
-        if cb.isChecked() and sp.value() > 0:
+        v = self._bc_current.get_new_value()
+        if v:
             mods.append({"type": "build_config", "file": "build_config.txt",
-                         "key": "CTV_CFG_PANEL_BACKLIGHT_CURRENT", "value": str(sp.value()), "mode": "value_part"})
+                         "key": "CTV_CFG_PANEL_BACKLIGHT_CURRENT", "value": v, "mode": "value_part"})
 
         # 客户
-        cb, le = self._customer
-        if cb.isChecked() and le.text().strip():
+        v = self._bc_customer.get_new_value()
+        if v:
             mods.append({"type": "build_config", "file": "build_config.txt",
-                         "key": "CTV_CFG_CUSTOMER", "value": le.text().strip(), "mode": "value"})
+                         "key": "CTV_CFG_CUSTOMER", "value": v, "mode": "value"})
 
-        # 白平衡
-        wb = [sp.value() for sp in self._wb_inputs]
-        if any(v != 0 for v in wb):
-            f = [str(v) if v != 0 else None for v in wb]
-            if all(v is not None for v in f[:3]) and all(v is None for v in f[3:]):
-                mods.append({"type": "color_temp", "values": f[:3]})
-            elif all(v is not None for v in f):
-                mods.append({"type": "color_temp", "values": f})
+        # 蓝屏
+        sel = self._db_blue.get_selected()
+        if sel:
+            mods.append({"type": "db_ini", "file": "configs/db.ini", "key": "System_screencolor",
+                         "value": "1" if sel == "打开蓝屏" else "0"})
+
+        # 上电模式
+        sel = self._prop_power.get_selected()
+        if sel:
+            pm = {"待机": "secondary", "开机": "direct", "记忆": "memory"}
+            mods.append({"type": "prop", "file": "ctvbuild.prop", "key": "ro.product.powermode", "value": pm.get(sel, sel)})
+
+        # 开机模式
+        sel = self._prop_boot.get_selected()
+        if sel:
+            bm = {"动画": "0", "视频": "1"}
+            mods.append({"type": "prop", "file": "ctvbuild.prop", "key": "persist.sys.bootanimation.type", "value": bm.get(sel, sel)})
+
+        # 开机桌面
+        sel = self._ctv_desktop.get_selected()
+        if sel:
+            dm = {"安卓": "0", "TV": "1", "记忆": "2"}
+            mods.append({"type": "ctv_data", "name": "BootDesktop", "value": dm.get(sel, sel)})
+
+        # 菜单显示时间
+        sel = self._ctv_menu_time.get_selected()
+        if sel:
+            tm = {"一直显示": "0", "5秒": "1", "10秒": "2", "20秒": "3", "30秒": "4", "60秒": "5"}
+            mods.append({"type": "ctv_data", "name": "MenuShowTime", "value": tm.get(sel, sel)})
+
+        # 语言显示
+        sel = self._ctv_lang.get_selected()
+        if sel:
+            mods.append({"type": "ctv_data", "name": "LanguageShowCountry",
+                         "value": "true" if sel == "带国家" else "false"})
+
+        # 默认语言
+        if self._ctv_lang_combo.currentIndex() > 0:
+            code = self._ctv_lang_combo.currentData()
+            if code:
+                mods.append({"type": "language_first", "target": code})
+
+        # 默认国家
+        if self._ctv_country_combo.currentIndex() > 0:
+            code = self._ctv_country_combo.currentData()
+            if code:
+                mods.append({"type": "country_list_first", "country_code": code})
+
+        # 菜单项
+        for cn, (row, en) in self._ctv_menu_rows.items():
+            sel = row.get_selected()
+            if sel:
+                mods.append({"type": "ctv_setting", "name": en,
+                             "enable": "support" if sel == "显示" else "hide",
+                             "prefix": cn in ("蓝牙",)})
+
+        # 预装
+        sel = self._pre_eshare.get_selected()
+        if sel:
+            mods.append({"type": "preinstall", "app": "ESharePlus",
+                         "enabled": sel == "预装"})
+
+        # 白名单
+        pkg = self._wl_pkg.text().strip()
+        if pkg:
+            if self._wl_add.isChecked():
+                mods.append({"type": "whitelist", "package": pkg, "action": "add"})
+            if self._wl_remove.isChecked():
+                mods.append({"type": "whitelist", "package": pkg, "action": "remove"})
 
         # NLA
-        if self._nla_value.value() > 0:
+        nla_val = self._nla_value.text().strip()
+        if nla_val:
             mods.append({"type": "nla", "param": self._nla_param.currentText(),
-                         "value": str(self._nla_value.value()), "position": 2})
-
-        # Gain
-        for name, attr in [("SatGain", "_sat_gain"), ("HueGain", "_hue_gain"), ("BriGain", "_bri_gain")]:
-            vals = [str(sp.value()) for sp in getattr(self, attr) if sp.value() != 0]
-            if len(vals) == 7:
-                mods.append({"type": "gain", "name": name, "values": vals})
+                         "value": nla_val, "position": 2})
 
         return mods
 
     def _on_preview(self):
         mods = self.collect_modifications()
         if not mods:
-            self._preview_edit.setPlainText("未勾选任何修改项。"); return
-        lines = [f"共 {len(mods)} 条修改项:"]
+            self._preview_edit.setPlainText("未做任何修改。"); return
+        lines = [f"共 {len(mods)} 条修改:"]
         for i, m in enumerate(mods, 1):
             lines.append(f"  {i}. {json.dumps(m, ensure_ascii=False)}")
         self._preview_edit.setPlainText("\n".join(lines))
@@ -617,5 +808,5 @@ class ManualPanel(QWidget):
     def _on_execute(self):
         mods = self.collect_modifications()
         if not mods:
-            self._preview_edit.setPlainText("未勾选任何修改项，无法执行。"); return
+            self._preview_edit.setPlainText("未做任何修改，无法执行。"); return
         self.execute_requested.emit(mods)

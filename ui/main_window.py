@@ -881,6 +881,9 @@ class MainWindow(QMainWindow):
                 self._build_cmd_input.setText(self._build_default_compile_command())
             # 读取当前目录的 CountryList，过滤手动面板的国家下拉
             self._refresh_country_list()
+            # 异步加载远程配置值到手动面板
+            if self._ssh_client:
+                self._manual_page.load_values(self._ssh_client, str(source))
 
     def _refresh_country_list(self) -> None:
         """从远程 ctv_data.xml 读取 CountryList，过滤手动面板国家选项。"""
