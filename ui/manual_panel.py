@@ -262,9 +262,17 @@ class _LoaderThread(QThread):
             # db.ini
             data["db_ini"] = r.read_db_ini(["System_screencolor"])
 
+            # 白平衡（查找 FacColorTemp_*_nature 行）
+            data["color_temp"] = r.read_color_temp()
+
             # NLA 参数（6 个）
             nla_keys = [f"NlaInfo_{p}" for p in ("brightness", "contrast", "saturation", "sharpness", "hue", "backlight")]
             data["nla"] = r.read_db_ini(nla_keys)
+
+            # SatGain / HueGain / BriGain
+            data["sat_gain"] = r.read_gain("SatGain")
+            data["hue_gain"] = r.read_gain("HueGain")
+            data["bri_gain"] = r.read_gain("BriGain")
 
             # ctvbuild.prop
             data["prop"] = r.read_prop(["ro.product.powermode", "persist.sys.bootanimation.type"])
@@ -462,27 +470,43 @@ class ManualPanel(QWidget):
     # ── Page 2: db.ini ──
     def _build_page_db_ini(self):
         scroll, lay = self._make_scroll()
+
+        # 蓝屏
         card = _card("db.ini", "路径: configs/db.ini")
         gl = _card_layout(card, "db.ini", "路径: configs/db.ini"); gl.setSpacing(2)
-
         self._db_blue = ToggleRow("蓝屏", ["打开蓝屏", "关闭蓝屏"])
         gl.addWidget(self._db_blue)
         lay.addWidget(card)
 
-        # 高级参数
-        card2 = _card("高级参数", "路径: configs/db.ini")
-        gl2 = QVBoxLayout(card2); gl2.setSpacing(2)
-
-        self._nla_param = _combo(["brightness", "contrast", "saturation", "sharpness", "hue", "backlight"])
-        self._nla_value = _input("中间值")
-        row = QHBoxLayout(); row.setSpacing(8)
-        row.addWidget(_lbl("NLA 参数", w=110))
-        row.addWidget(self._nla_param)
-        row.addWidget(_lbl("中间值 →", w=60, dim=True))
-        row.addWidget(self._nla_value)
-        gl2.addLayout(row)
-
+        # 白平衡
+        card2 = _card("白平衡", "FacColorTemp_*_nature 行，前6值 = R,G,B,R_O,G_O,B_O")
+        gl2 = _card_layout(card2, "白平衡", "FacColorTemp_*_nature 行，前6值"); gl2.setSpacing(6)
+        self._wb_rows: list[EditRow] = []
+        for tag in ["R Gain", "G Gain", "B Gain", "R Offset", "G Offset", "B Offset"]:
+            row = EditRow(tag, "数值")
+            gl2.addWidget(row)
+            self._wb_rows.append(row)
         lay.addWidget(card2)
+
+        # NLA 非线性参数（6 组）
+        card3 = _card("NLA 非线性参数", "NlaInfo_* 行，中间值（第3个）")
+        gl3 = _card_layout(card3, "NLA 非线性参数", "NlaInfo_* 行，中间值"); gl3.setSpacing(2)
+        self._nla_rows: dict[str, EditRow] = {}
+        for param in ("brightness", "contrast", "saturation", "sharpness", "hue", "backlight"):
+            row = EditRow(param, "中间值")
+            gl3.addWidget(row)
+            self._nla_rows[param] = row
+        lay.addWidget(card3)
+
+        # SatGain / HueGain / BriGain
+        for gain_name in ("SatGain", "HueGain", "BriGain"):
+            card_g = _card(gain_name, f"PQ_*_{gain_name} 行，前7值")
+            gl_g = _card_layout(card_g, gain_name, f"PQ_*_{gain_name} 行，前7值"); gl_g.setSpacing(2)
+            row = EditRow(gain_name, "7个逗号分隔值，如 3,3,-5,12,5,13,6")
+            gl_g.addWidget(row)
+            setattr(self, f"_gain_{gain_name.lower()}", row)
+            lay.addWidget(card_g)
+
         lay.addStretch()
         self._stack.addWidget(scroll)
 
@@ -712,14 +736,32 @@ class ManualPanel(QWidget):
 
         # NLA 当前值
         nla = data.get("nla", {})
-        for key, val in nla.items():
-            # NlaInfo_brightness → brightness
-            param = key.replace("NlaInfo_", "")
-            if param == self._nla_param.currentText():
-                # 取中间值（第3个逗号分隔值）
+        for param, row in self._nla_rows.items():
+            key = f"NlaInfo_{param}"
+            val = nla.get(key, "")
+            if val:
                 vals = [v.strip() for v in val.split(",")]
                 mid = vals[2] if len(vals) > 2 else val
-                self._nla_value.setPlaceholderText(f"当前: {mid}")
+                row.set_current(mid)
+
+        # 白平衡当前值
+        ct = data.get("color_temp", "")
+        if ct:
+            vals = [v.strip() for v in ct.split(",")]
+            labels = ["R Gain", "G Gain", "B Gain", "R Offset", "G Offset", "B Offset"]
+            for i, row in enumerate(self._wb_rows):
+                if i < len(vals):
+                    row.set_current(vals[i])
+
+        # Gain 当前值
+        for gain_name, attr in [("SatGain", "_gain_satgain"), ("HueGain", "_gain_huegain"), ("BriGain", "_gain_brigain")]:
+            row_widget = getattr(self, attr, None)
+            if row_widget:
+                val = data.get(gain_name.lower().replace("gain", "_gain"), "")
+                if not val:
+                    val = data.get(f"{gain_name.lower()}", "")
+                if val:
+                    row_widget.set_current(val)
 
     def filter_country_list(self, allowed_codes: list[str]) -> None:
         combo = self._ctv_country_combo
@@ -831,11 +873,30 @@ class ManualPanel(QWidget):
             if self._wl_remove.isChecked():
                 mods.append({"type": "whitelist", "package": pkg, "action": "remove"})
 
+        # 白平衡
+        wb_vals = [row.get_new_value() for row in self._wb_rows]
+        wb_filled = [v for v in wb_vals if v]
+        if wb_filled:
+            if len(wb_filled) == 6:
+                mods.append({"type": "color_temp", "values": wb_filled})
+            elif len(wb_filled) >= 3 and all(wb_vals[i] for i in range(3)):
+                mods.append({"type": "color_temp", "values": [wb_vals[i] for i in range(3)]})
+
         # NLA
-        nla_val = self._nla_value.text().strip()
-        if nla_val:
-            mods.append({"type": "nla", "param": self._nla_param.currentText(),
-                         "value": nla_val, "position": 2})
+        for param, row in self._nla_rows.items():
+            v = row.get_new_value()
+            if v:
+                mods.append({"type": "nla", "param": param, "value": v, "position": 2})
+
+        # Gain
+        for gain_name in ("SatGain", "HueGain", "BriGain"):
+            row_widget = getattr(self, f"_gain_{gain_name.lower()}", None)
+            if row_widget:
+                v = row_widget.get_new_value()
+                if v:
+                    vals = [x.strip() for x in v.split(",")]
+                    if len(vals) >= 7:
+                        mods.append({"type": "gain", "name": gain_name, "values": vals[:7]})
 
         return mods
 

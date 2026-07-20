@@ -110,6 +110,38 @@ class RemoteConfigReader:
                 result[name] = m.group(1).strip()
         return result
 
+    # ── 白平衡（FacColorTemp_*_nature）──
+
+    def read_color_temp(self) -> Optional[str]:
+        """读取白平衡行的前6个值（R,G,B,R_O,G_O,B_O）。"""
+        content = self._read("db_ini")
+        if not content:
+            return None
+        for line in content.splitlines():
+            if "FacColorTemp" in line and "_nature" in line and "=" in line:
+                val_part = line.split("=", 1)[1].strip()
+                if ";" in val_part:
+                    val_part = val_part[:val_part.index(";")].strip()
+                return val_part  # 如 "274,256,292,256,256,256"
+        return None
+
+    # ── Gain（SatGain/HueGain/BriGain）──
+
+    def read_gain(self, gain_name: str) -> Optional[str]:
+        """读取 PQ_*_{gain_name} 行的前7个值。"""
+        content = self._read("db_ini")
+        if not content:
+            return None
+        for line in content.splitlines():
+            if gain_name in line and "=" in line:
+                val_part = line.split("=", 1)[1].strip()
+                if ";" in val_part:
+                    val_part = val_part[:val_part.index(";")].strip()
+                # 取前7个值
+                vals = [v.strip() for v in val_part.split(",")]
+                return ",".join(vals[:7])
+        return None
+
     # ── ctvsetting.xml ──
 
     def read_ctv_setting(self, en_names: list[str]) -> dict[str, str]:
