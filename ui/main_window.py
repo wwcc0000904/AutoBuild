@@ -1885,23 +1885,20 @@ class MainWindow(QMainWindow):
         self._result_detail.setPlainText("\n".join(lines))
         self._stack.setCurrentIndex(3)
 
-        # 手动执行完成后自动提交编译（重新读取目标目录输入框的值）
-        try:
-            fresh_target = self._get_target_path()
-            build_cmd = self._build_default_compile_command(target_path=str(fresh_target))
-            self._build_service.set_callbacks(
-                on_log=self._log_emitter.log_received.emit,
-                on_finished=lambda status, code: self._log_emitter.finished.emit(status, code),
-            )
-            build_job = self._build_service.submit(str(fresh_target), command=build_cmd)
-            self._build_log.append(f"[编译] 任务已提交: {build_job.task_id}")
-            self._build_btn.setEnabled(False)
-            self._cancel_build_btn.setEnabled(True)
-            self._build_btn.setText("编译中…")
-            from PySide6.QtCore import QTimer as _QTimer2
-            _QTimer2.singleShot(1200, lambda: self._switch_mode(4))
-        except Exception as e:
-            self._build_log.append(f"[错误] 自动提交编译失败: {e}")
+        # 保存执行结果，等用户确认后加入编译队列（与自动模式一致）
+        unique_files = sorted(set(str(f) for f in changed)) if changed else []
+        dir_combo = self._dir_combo if hasattr(self, "_dir_combo") else None
+        customer_name = dir_combo.currentText() if dir_combo else "未知"
+        self._last_result = {
+            "project_path": str(self._get_target_path()),
+            "modified_files": unique_files,
+            "customer_name": customer_name,
+            "analysis_summary": f"手动修改 {len(modifications)} 项",
+        }
+        if hasattr(self, "_enqueue_btn"):
+            self._enqueue_btn.setVisible(True)
+            self._enqueue_btn.setEnabled(True)
+            self._enqueue_btn.setText("＋ 加入编译队列")
 
     # ========== 执行任务（自动模式）==========
 
