@@ -141,6 +141,14 @@ class MainWindow(QMainWindow):
         self._customer_dir_map: dict[str, str] = {}
         self._bg_path = ""  # 自定义背景图路径
 
+        # 网盘上传服务
+        from upload_service import UploadService
+        self._upload_service = UploadService(ssh_client)
+        self._wdav_user = ""
+        self._wdav_pass = ""
+        self._wdav_folder = ""
+        self._load_webdav_settings()
+
         # 实时日志信号
         self._log_emitter = _LogEmitter(self)
         self._log_emitter.log_received.connect(self._on_build_log_append)
@@ -1222,6 +1230,58 @@ class MainWindow(QMainWindow):
         tmux_row.addStretch()
         build_layout.addLayout(tmux_row)
 
+        # ── 网盘上传 ──
+        from PySide6.QtWidgets import QFrame as _QFrame
+        sep = _QFrame(); sep.setFrameShape(_QFrame.Shape.HLine); sep.setStyleSheet("color:#e0e0e0;")
+        build_layout.addWidget(sep)
+
+        upload_title = QLabel("  网盘上传")
+        upload_title.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {self.CLR_TEXT}; background: transparent; padding: 4px 0;")
+        build_layout.addWidget(upload_title)
+
+        # 网盘账号
+        wdav_row1 = QHBoxLayout(); wdav_row1.setSpacing(10)
+        wdav_row1.addWidget(QLabel("账号:")); self._wdav_user_input = QLineEdit(); self._wdav_user_input.setStyleSheet(self._input_style())
+        self._wdav_user_input.setPlaceholderText("网盘用户名"); self._wdav_user_input.setText(self._wdav_user)
+        wdav_row1.addWidget(self._wdav_user_input, 1)
+        wdav_row1.addWidget(QLabel("密码:")); self._wdav_pass_input = QLineEdit(); self._wdav_pass_input.setStyleSheet(self._input_style())
+        self._wdav_pass_input.setEchoMode(QLineEdit.EchoMode.Password); self._wdav_pass_input.setPlaceholderText("网盘密码"); self._wdav_pass_input.setText(self._wdav_pass)
+        wdav_row1.addWidget(self._wdav_pass_input, 1)
+        build_layout.addLayout(wdav_row1)
+
+        # 网盘文件夹
+        wdav_row2 = QHBoxLayout(); wdav_row2.setSpacing(10)
+        wdav_row2.addWidget(QLabel("文件夹:")); self._wdav_folder_input = QLineEdit(); self._wdav_folder_input.setStyleSheet(self._input_style())
+        self._wdav_folder_input.setPlaceholderText("如 software/FAE"); self._wdav_folder_input.setText(self._wdav_folder)
+        wdav_row2.addWidget(self._wdav_folder_input, 1)
+        save_wdav_btn = QPushButton("  保存设置")
+        save_wdav_btn.setStyleSheet(self._small_btn_style())
+        save_wdav_btn.clicked.connect(self._save_webdav_settings)
+        wdav_row2.addWidget(save_wdav_btn)
+        build_layout.addLayout(wdav_row2)
+
+        # 上传按钮 + zip 文件路径
+        upload_row = QHBoxLayout(); upload_row.setSpacing(10)
+        self._upload_zip_input = QLineEdit(); self._upload_zip_input.setStyleSheet(self._input_style())
+        self._upload_zip_input.setPlaceholderText("zip 文件路径（留空自动查找编译产物）")
+        upload_row.addWidget(self._upload_zip_input, 1)
+        find_zip_btn = QPushButton("  查找最新 zip")
+        find_zip_btn.setStyleSheet(self._small_btn_style())
+        find_zip_btn.clicked.connect(self._on_find_zip)
+        upload_row.addWidget(find_zip_btn)
+        self._upload_btn = QPushButton("  上传到网盘")
+        self._upload_btn.setIcon(qta.icon("fa5s.cloud-upload-alt", color="#1a1a1a"))
+        self._upload_btn.setStyleSheet(self._accent_btn_style())
+        self._upload_btn.clicked.connect(self._on_upload)
+        upload_row.addWidget(self._upload_btn)
+        build_layout.addLayout(upload_row)
+
+        # 上传结果
+        self._upload_result_label = QLabel("")
+        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
+        self._upload_result_label.setWordWrap(True)
+        build_layout.addWidget(self._upload_result_label)
+
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         back_btn = QPushButton("← 返回执行结果")
@@ -1254,6 +1314,76 @@ class MainWindow(QMainWindow):
                 order_args = " " + " ".join(segments)
 
         return f"cd {code_dir} && EXACT_MATCH=1 ctvbuild all -o{order_args}"
+
+    # ── WebDAV 设置 ──
+
+    def _load_webdav_settings(self):
+        from PySide6.QtCore import QSettings
+        s = QSettings("CtvAuto", "SoftwareOutput")
+        self._wdav_user = s.value("wdav/user", "")
+        self._wdav_folder = s.value("wdav/folder", "software/FAE")
+        try:
+            import keyring
+            self._wdav_pass = keyring.get_password("CtvAuto-WebDAV", self._wdav_user) or ""
+        except Exception:
+            self._wdav_pass = ""
+
+    def _save_webdav_settings(self):
+        from PySide6.QtCore import QSettings
+        user = self._wdav_user_input.text().strip()
+        pwd = self._wdav_pass_input.text().strip()
+        folder = self._wdav_folder_input.text().strip()
+        s = QSettings("CtvAuto", "SoftwareOutput")
+        s.setValue("wdav/user", user)
+        s.setValue("wdav/folder", folder)
+        try:
+            import keyring
+            if user and pwd:
+                keyring.set_password("CtvAuto-WebDAV", user, pwd)
+        except Exception:
+            pass
+        self._wdav_user = user
+        self._wdav_pass = pwd
+        self._wdav_folder = folder
+        self._upload_result_label.setText("✓ 网盘设置已保存")
+        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
+
+    def _on_find_zip(self):
+        code_dir = self._get_build_code_dir()
+        self._upload_result_label.setText("正在查找最新 zip 文件…")
+        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT_DIM}; background: transparent; padding: 4px;")
+        import threading
+        def _find():
+            try:
+                path = self._upload_service.find_latest_zip(code_dir)
+                self._log_emitter.completion_result.emit(f"__ZIP__{path}" if path else "__ZIP__NOT_FOUND")
+            except Exception as e:
+                self._log_emitter.completion_result.emit(f"__ZIP__ERROR:{e}")
+        threading.Thread(target=_find, daemon=True).start()
+
+    def _on_upload(self):
+        user = self._wdav_user_input.text().strip()
+        pwd = self._wdav_pass_input.text().strip()
+        folder = self._wdav_folder_input.text().strip()
+        zip_path = self._upload_zip_input.text().strip()
+        if not user or not pwd:
+            self._upload_result_label.setText("❌ 请先填写网盘账号和密码")
+            self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_RED}; background: transparent; padding: 4px;")
+            return
+        if not zip_path:
+            self._upload_result_label.setText("❌ 请填写或查找 zip 文件路径")
+            self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_RED}; background: transparent; padding: 4px;")
+            return
+        self._upload_btn.setEnabled(False)
+        self._upload_btn.setText("  上传中…")
+        self._upload_result_label.setText("正在上传…")
+        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT_DIM}; background: transparent; padding: 4px;")
+        import threading
+        def _do():
+            result = self._upload_service.upload_file(zip_path, folder, user, pwd)
+            self._log_emitter.completion_result.emit(
+                f"__UPLOAD__{'OK' if result.success else 'FAIL'}|{result.filename}|{result.link}|{result.size}|{result.error}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def eventFilter(self, obj, event):
         """拦截日志框的键盘事件，发送到 shell。"""
@@ -1452,6 +1582,32 @@ class MainWindow(QMainWindow):
             self._build_log.setTextCursor(cursor)
         elif result.startswith("__STATUS__"):
             self._completion_label.setText(result[10:])
+        elif result.startswith("__ZIP__"):
+            path = result[7:]
+            if path == "NOT_FOUND":
+                self._upload_result_label.setText("❌ 未找到 zip 文件")
+                self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_RED}; background: transparent; padding: 4px;")
+            elif path.startswith("ERROR:"):
+                self._upload_result_label.setText(f"❌ 查找失败: {path[6:]}")
+                self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_RED}; background: transparent; padding: 4px;")
+            else:
+                self._upload_zip_input.setText(path)
+                self._upload_result_label.setText(f"✓ 找到: {path.rsplit('/', 1)[-1]}")
+                self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
+        elif result.startswith("__UPLOAD__"):
+            parts = result[10:].split("|", 4)
+            ok, filename, link, size, error = (parts + [""] * 5)[:5]
+            self._upload_btn.setEnabled(True)
+            self._upload_btn.setText("  上传到网盘")
+            if ok == "OK":
+                msg = f"✓ 上传成功: {filename} ({size})"
+                if link:
+                    msg += f"\n链接: {link}"
+                self._upload_result_label.setText(msg)
+                self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
+            else:
+                self._upload_result_label.setText(f"❌ 上传失败: {error}")
+                self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_RED}; background: transparent; padding: 4px;")
 
     def _on_terminal_tab(self) -> None:
         """终端区 Tab 补全（后台线程执行，避免阻塞 UI）。"""

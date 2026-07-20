@@ -7,12 +7,12 @@
       "/home/user/352_AN12_MP3/code/cultraview/cusConfig/352/atv/Aipuda/AN12_CV352_A42_680MA_TZ-002/overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
     ],
     "analysis_summary": "默认国家 伊朗",
-    "status": "pending",
+    "status": "building",
     "created_at": "2026-07-20 16:33:49",
-    "started_at": "",
+    "started_at": "2026-07-20 21:16:22",
     "finished_at": "",
     "build_log": "",
     "exit_code": null,
-    "task_id": ""
+    "task_id": "build-001"
   }
 ]
