@@ -492,34 +492,42 @@ class ManualPanel(QWidget):
         gl.addWidget(self._db_blue)
         lay.addWidget(card)
 
-        # 白平衡
-        card2 = _card("白平衡", "FacColorTemp_*_nature 行，前6值 = R,G,B,R_O,G_O,B_O")
-        gl2 = _card_layout(card2, "白平衡", "FacColorTemp_*_nature 行，前6值"); gl2.setSpacing(6)
-        self._wb_rows: list[EditRow] = []
-        for tag in ["R Gain", "G Gain", "B Gain", "R Offset", "G Offset", "B Offset"]:
-            row = EditRow(tag, "数值")
-            gl2.addWidget(row)
-            self._wb_rows.append(row)
-        lay.addWidget(card2)
+        # 白平衡 + NLA（左右布局）
+        card2 = _card("白平衡 & NLA", "db.ini")
+        gl2 = _card_layout(card2, "白平衡 & NLA", "db.ini"); gl2.setSpacing(8)
+        two_col = QHBoxLayout(); two_col.setSpacing(20)
 
-        # NLA 非线性参数（6 组）
-        card3 = _card("NLA 非线性参数", "NlaInfo_* 行，中间值（第3个）")
-        gl3 = _card_layout(card3, "NLA 非线性参数", "NlaInfo_* 行，中间值"); gl3.setSpacing(2)
+        # 左列：白平衡
+        wb_col = QVBoxLayout(); wb_col.setSpacing(2)
+        wb_col.addWidget(_lbl("白平衡 (FacColorTemp)", bold=True, size=11))
+        self._wb_rows: list[EditRow] = []
+        for tag in ["R", "G", "B", "R_O", "G_O", "B_O"]:
+            row = EditRow(tag, "值")
+            wb_col.addWidget(row)
+            self._wb_rows.append(row)
+        two_col.addLayout(wb_col, 1)
+
+        # 右列：NLA
+        nla_col = QVBoxLayout(); nla_col.setSpacing(2)
+        nla_col.addWidget(_lbl("NLA 非线性 (NlaInfo)", bold=True, size=11))
         self._nla_rows: dict[str, EditRow] = {}
         for param in ("brightness", "contrast", "saturation", "sharpness", "hue", "backlight"):
             row = EditRow(param, "中间值")
-            gl3.addWidget(row)
+            nla_col.addWidget(row)
             self._nla_rows[param] = row
-        lay.addWidget(card3)
+        two_col.addLayout(nla_col, 1)
 
-        # SatGain / HueGain / BriGain
+        gl2.addLayout(two_col)
+        lay.addWidget(card2)
+
+        # SatGain / HueGain / BriGain（一个卡片）
+        card3 = _card("Color Space 增益", "PQ_*_Gain 行，前7值")
+        gl3 = _card_layout(card3, "Color Space 增益", "PQ_*_Gain 行，前7值"); gl3.setSpacing(2)
         for gain_name in ("SatGain", "HueGain", "BriGain"):
-            card_g = _card(gain_name, f"PQ_*_{gain_name} 行，前7值")
-            gl_g = _card_layout(card_g, gain_name, f"PQ_*_{gain_name} 行，前7值"); gl_g.setSpacing(2)
-            row = EditRow(gain_name, "7个逗号分隔值，如 3,3,-5,12,5,13,6")
-            gl_g.addWidget(row)
+            row = EditRow(gain_name, "7个逗号分隔值")
+            gl3.addWidget(row)
             setattr(self, f"_gain_{gain_name.lower()}", row)
-            lay.addWidget(card_g)
+        lay.addWidget(card3)
 
         lay.addStretch()
         self._stack.addWidget(scroll)
