@@ -148,6 +148,18 @@ class RemoteConfigReader:
             return m.group(1).strip().upper()
         return None
 
+    # ── CountryList（从 ctv_data.xml 读取）──
+
+    def read_country_list(self) -> list[str]:
+        """读取 CountryList 中的国家码列表。"""
+        content = self._read("ctv_data")
+        if not content:
+            return []
+        m = re.search(r'name="CountryList"\s+item="([^"]+)"', content)
+        if m:
+            return [c.strip() for c in m.group(1).split(",")]
+        return []
+
     # ── CtvLanguage.ini ──
 
     def read_language_first(self) -> Optional[str]:

@@ -262,11 +262,21 @@ class _LoaderThread(QThread):
             # db.ini
             data["db_ini"] = r.read_db_ini(["System_screencolor"])
 
+            # NLA 参数（6 个）
+            nla_keys = [f"NlaInfo_{p}" for p in ("brightness", "contrast", "saturation", "sharpness", "hue", "backlight")]
+            data["nla"] = r.read_db_ini(nla_keys)
+
             # ctvbuild.prop
             data["prop"] = r.read_prop(["ro.product.powermode", "persist.sys.bootanimation.type"])
 
             # ctv_data.xml
             data["ctv_data"] = r.read_ctv_data(["BootDesktop", "MenuShowTime", "LanguageShowCountry"])
+
+            # 默认语言（从 CtvLanguage.ini 第一行读取）
+            data["language_first"] = r.read_language_first()
+
+            # CountryList
+            data["country_list"] = r.read_country_list()
 
             # ctvsetting.xml
             en_names = ["tv kernel", "tv sdk", "tv resolution", "tv software", "tv hardware", "tv model", "tv bluetooth"]
@@ -317,6 +327,11 @@ class ManualPanel(QWidget):
 
     def _on_loaded(self, data: dict):
         self._current_data = data
+        # 先过滤国家下拉（只保留 CountryList 中的国家）
+        country_list = data.get("country_list", [])
+        if country_list:
+            self.filter_country_list(country_list)
+        # 再填充所有当前值
         self._populate_values(data)
 
     # ── UI 构建 ──
@@ -677,6 +692,34 @@ class ManualPanel(QWidget):
         # 白名单
         pkgs = data.get("whitelist", [])
         self._wl_current_lbl.setText(f"当前白名单 ({len(pkgs)} 个): {', '.join(pkgs[:10])}{'…' if len(pkgs) > 10 else ''}")
+
+        # 默认语言（从 CtvLanguage.ini 第一行读取）
+        lang_first = data.get("language_first", "")
+        if lang_first:
+            # CSV 格式: code,name,country → 显示 name (code)
+            parts = [p.strip() for p in lang_first.split(",")]
+            if len(parts) >= 2:
+                self._ctv_lang_current.setText(f"{parts[1]} ({parts[0]})")
+            else:
+                self._ctv_lang_current.setText(lang_first)
+
+        # 默认国家（CountryList 第一项）
+        country_list = data.get("country_list", [])
+        if country_list:
+            first_code = country_list[0]
+            name = self._country_map.get(first_code, first_code)
+            self._ctv_country_current.setText(f"{name} ({first_code})")
+
+        # NLA 当前值
+        nla = data.get("nla", {})
+        for key, val in nla.items():
+            # NlaInfo_brightness → brightness
+            param = key.replace("NlaInfo_", "")
+            if param == self._nla_param.currentText():
+                # 取中间值（第3个逗号分隔值）
+                vals = [v.strip() for v in val.split(",")]
+                mid = vals[2] if len(vals) > 2 else val
+                self._nla_value.setPlaceholderText(f"当前: {mid}")
 
     def filter_country_list(self, allowed_codes: list[str]) -> None:
         combo = self._ctv_country_combo
