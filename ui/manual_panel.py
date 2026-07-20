@@ -142,30 +142,24 @@ class ManualPanel(QWidget):
         nav_lay.setContentsMargins(0, 4, 0, 4)
         nav_lay.setSpacing(6)
 
-        self._pages_info: list[tuple[str, str]] = [
-            ("📄 build_config.txt",     "功能开关 + 参数"),
-            ("📊 db.ini",              "蓝屏 + 高级参数"),
-            ("📝 ctvbuild.prop",       "上电/开机模式"),
-            ("📋 ctv_data.xml",        "桌面/菜单/语言/国家"),
-            ("⚙️ ctvsetting.xml",      "菜单项显示/隐藏"),
-            ("📃 whiteList.conf",      "白名单"),
-            ("📦 build_ctv_app.txt",   "预装应用"),
+        self._pages_info: list[tuple[str, str, str]] = [
+            ("📄", "build_config.txt",     "功能开关 + 参数"),
+            ("📊", "db.ini",              "蓝屏 + 高级参数"),
+            ("📝", "ctvbuild.prop",       "上电/开机模式"),
+            ("📋", "ctv_data.xml",        "桌面/菜单/语言/国家"),
+            ("⚙️", "ctvsetting.xml",      "菜单项显示/隐藏"),
+            ("📃", "whiteList.conf",      "白名单"),
+            ("📦", "build_ctv_app.txt",   "预装应用"),
         ]
         self._nav_btns: list[QPushButton] = []
-        for i, (icon_name, tip) in enumerate(self._pages_info):
-            btn = QPushButton(f" {i+1}")
-            btn.setFixedSize(32, 28)
+        for i, (icon, fname, tip) in enumerate(self._pages_info):
+            btn = QPushButton(f" {icon} {fname}")
             btn.setToolTip(tip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(self._nav_style(False))
             btn.clicked.connect(lambda _, idx=i: self._switch_page(idx))
             nav_lay.addWidget(btn)
             self._nav_btns.append(btn)
-
-        # 文件名标签
-        self._page_label = QLabel(self._pages_info[0][0])
-        self._page_label.setStyleSheet(f"font-size: 12px; color: {_CLR['dim']}; background: transparent; padding-left: 8px;")
-        nav_lay.addWidget(self._page_label)
         nav_lay.addStretch()
         root.addWidget(nav)
 
@@ -217,17 +211,16 @@ class ManualPanel(QWidget):
     def _nav_style(self, active: bool) -> str:
         if active:
             return ("QPushButton{background:#e0e0e0;color:#1a1a1a;border:none;border-radius:6px;"
-                    "padding:4px 8px;font-size:12px;font-weight:bold;}"
+                    "padding:6px 12px;font-size:11px;font-weight:bold;}"
                     "QPushButton:hover{background:#d5d5d5;}")
         return ("QPushButton{background:transparent;color:#888;border:1px solid #ddd;border-radius:6px;"
-                "padding:4px 8px;font-size:12px;}"
+                "padding:6px 12px;font-size:11px;}"
                 "QPushButton:hover{background:#f0f0f0;color:#1a1a1a;}")
 
     def _switch_page(self, idx: int):
         self._stack.setCurrentIndex(idx)
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(self._nav_style(i == idx))
-        self._page_label.setText(self._pages_info[idx][0])
 
     # ================================================================
     #  Page 1: build_config.txt — 功能开关 + 电流 + 客户
