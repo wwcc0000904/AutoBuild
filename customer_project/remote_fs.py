@@ -104,7 +104,26 @@ class RemotePath:
             return False
 
     def read_text(self, encoding: str = "utf-8") -> str:
-        return self._exec(f'cat {self._q()}', encoding=encoding)
+        # 自动尝试多种编码，兼容 GBK/Latin 等非 UTF-8 文件
+        raw = self._exec_raw(f'cat {self._q()}')
+        for enc in (encoding, "gbk", "gb2312", "latin-1"):
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        return raw.decode("latin-1")  # latin-1 永远不会失败
+
+    def _exec_raw(self, cmd: str) -> bytes:
+        """在远程执行命令并返回原始 bytes；若命令失败则抛出异常。"""
+        stdin, stdout, stderr = self._ssh.exec_command(cmd)
+        exit_status = stdout.channel.recv_exit_status()
+        out = stdout.read()
+        err = stderr.read()
+        if exit_status != 0:
+            raise RemoteCommandError(
+                f"Remote command failed (exit={exit_status}): {cmd}\n{err.decode('latin-1')}"
+            )
+        return out
 
     def write_text(self, content: str, encoding: str = "utf-8") -> None:
         encoded = base64.b64encode(content.encode(encoding)).decode("ascii")
