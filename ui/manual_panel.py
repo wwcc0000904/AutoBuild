@@ -939,4 +939,54 @@ class ManualPanel(QWidget):
             box.exec()
             return
         self._logger.info("手动模式执行: %d 条修改", len(mods))
-        self.execute_requested.emit(mods)
+        self._show_progress("正在执行修改…")
+        # 用 QTimer 让进度浮层先渲染出来，再执行耗时操作
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: self.execute_requested.emit(mods))
+
+    def _show_progress(self, text: str):
+        """显示半透明进度浮层。"""
+        if hasattr(self, '_progress_overlay') and self._progress_overlay:
+            self._progress_overlay.close()
+            self._progress_overlay.deleteLater()
+
+        overlay = QWidget(self)
+        overlay.setObjectName("progressOverlay")
+        overlay.setStyleSheet("QWidget#progressOverlay { background: rgba(0,0,0,0.3); }")
+        overlay.setGeometry(self.rect())
+
+        # 居中卡片
+        card = QWidget(overlay)
+        card.setStyleSheet("QWidget { background: #ffffff; border-radius: 12px; }")
+        card_w, card_h = 280, 100
+        card.setGeometry(
+            (self.width() - card_w) // 2, (self.height() - card_h) // 2,
+            card_w, card_h
+        )
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(10)
+
+        lbl = QLabel(text)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("font-size: 13px; color: #1a1a1a; background: transparent;")
+        cl.addWidget(lbl)
+
+        from PySide6.QtWidgets import QProgressBar
+        bar = QProgressBar()
+        bar.setRange(0, 0)  # 不确定进度模式（转圈）
+        bar.setStyleSheet(
+            "QProgressBar { border: 1px solid #e0e0e0; border-radius: 4px; background: #f0f0f0; height: 8px; }"
+            "QProgressBar::chunk { background: #4a90d9; border-radius: 4px; }"
+        )
+        cl.addWidget(bar)
+
+        overlay.show()
+        self._progress_overlay = overlay
+
+    def hide_progress(self):
+        """隐藏进度浮层。"""
+        if hasattr(self, '_progress_overlay') and self._progress_overlay:
+            self._progress_overlay.close()
+            self._progress_overlay.deleteLater()
+            self._progress_overlay = None

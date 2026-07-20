@@ -1960,8 +1960,10 @@ class MainWindow(QMainWindow):
                 self._enqueue_btn.setVisible(True)
                 self._enqueue_btn.setEnabled(True)
                 self._enqueue_btn.setText("＋ 加入编译队列")
+            self._manual_page.hide_progress()
         except Exception as e:
             self._logger.error("手动模式执行失败: %s", e, exc_info=True)
+            self._manual_page.hide_progress()
             self._result_title.setText("❌ 执行失败")
             self._result_detail.setPlainText(f"错误: {e}")
             self._stack.setCurrentIndex(3)
