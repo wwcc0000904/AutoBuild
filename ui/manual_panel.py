@@ -142,18 +142,18 @@ class ManualPanel(QWidget):
         nav_lay.setContentsMargins(0, 4, 0, 4)
         nav_lay.setSpacing(6)
 
-        self._pages_info: list[tuple[str, str, str]] = [
-            ("📄", "build_config.txt",     "功能开关 + 参数"),
-            ("📊", "db.ini",              "蓝屏 + 高级参数"),
-            ("📝", "ctvbuild.prop",       "上电/开机模式"),
-            ("📋", "ctv_data.xml",        "桌面/菜单/语言/国家"),
-            ("⚙️", "ctvsetting.xml",      "菜单项显示/隐藏"),
-            ("📃", "whiteList.conf",      "白名单"),
-            ("📦", "build_ctv_app.txt",   "预装应用"),
+        self._pages_info: list[tuple[str, str]] = [
+            ("build_config.txt",     "功能开关 + 参数"),
+            ("db.ini",              "蓝屏 + 高级参数"),
+            ("ctvbuild.prop",       "上电/开机模式"),
+            ("ctv_data.xml",        "桌面/菜单/语言/国家"),
+            ("ctvsetting.xml",      "菜单项显示/隐藏"),
+            ("whiteList.conf",      "白名单"),
+            ("build_ctv_app.txt",   "预装应用"),
         ]
         self._nav_btns: list[QPushButton] = []
-        for i, (icon, fname, tip) in enumerate(self._pages_info):
-            btn = QPushButton(f" {icon} {fname}")
+        for i, (fname, tip) in enumerate(self._pages_info):
+            btn = QPushButton(f" {fname}")
             btn.setToolTip(tip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(self._nav_style(False))
