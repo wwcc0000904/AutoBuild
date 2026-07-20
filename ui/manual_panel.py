@@ -940,9 +940,8 @@ class ManualPanel(QWidget):
             return
         self._logger.info("手动模式执行: %d 条修改", len(mods))
         self._show_progress("正在执行修改…")
-        # 用 QTimer 让进度浮层先渲染出来，再执行耗时操作
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(100, lambda: self.execute_requested.emit(mods))
+        # 后台线程执行，不阻塞 UI
+        self.execute_requested.emit(mods)
 
     def _show_progress(self, text: str):
         """显示半透明进度浮层。"""

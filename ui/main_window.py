@@ -1828,145 +1828,175 @@ class MainWindow(QMainWindow):
     # ========== 手动模式执行 ==========
 
     def _on_manual_execute(self, modifications: list[dict]) -> None:
+        """后台线程执行手动修改。"""
         self._logger.info("手动模式收到执行信号: %d 条修改", len(modifications))
-        try:
-            from rules.rule_matcher import build_rule_registry
-            from patcher.rule_patcher import RulePatcher
-            from executor.validators import validate_product_model
+        from PySide6.QtCore import QThread, Signal as QSignal
 
-            source_path = self._get_source_path()
-            target_path = self._get_target_path()
+        class _Worker(QThread):
+            finished = QSignal(dict)  # {html, changed_files, error}
 
-            if not source_path.exists():
-                self._result_title.setText("❌ 错误")
-                self._result_detail.setPlainText(f"源目录不存在: {source_path}")
-                self._stack.setCurrentIndex(3)
-                return
+            def __init__(self, parent_win, mods):
+                super().__init__(parent_win)
+                self._win = parent_win
+                self._mods = mods
 
-            is_copy = source_path != target_path
-            if is_copy:
-                if target_path.exists():
-                    target_path.remote_rmtree()
-                source_path.remote_copytree(target_path)
+            def run(self):
+                try:
+                    result = self._win._do_manual_execute(self._mods)
+                    self.finished.emit(result)
+                except Exception as e:
+                    self.finished.emit({"error": str(e)})
 
-            warnings = []
-            model_result = validate_product_model(target_path)
-            if model_result.warnings:
-                warnings.extend(model_result.warnings)
+        self._manual_worker = _Worker(self, modifications)
+        self._manual_worker.finished.connect(self._on_manual_finished)
+        self._manual_worker.start()
 
-            # 修改前快照（用于 diff）
-            CTV_DATA_PATH = "overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
-            RULE_FILE_MAP = {
-                "build_config": lambda m: m.get("file"),
-                "preinstall": lambda m: "build_ctv_app.txt",
-                "whitelist": lambda m: "etc/whiteList.conf",
-                "prop": lambda m: m.get("file"),
-                "ctv_data": lambda m: CTV_DATA_PATH,
-                "country_list_first": lambda m: CTV_DATA_PATH,
-                "language_first": lambda m: "configs/CtvLanguage.ini",
-                "db_ini": lambda m: m.get("file"),
-                "color_temp": lambda m: "configs/db.ini",
-                "nla": lambda m: "configs/db.ini",
-                "gain": lambda m: "configs/db.ini",
-                "ctv_setting": lambda m: "configs/ctvsetting.xml",
-            }
-            file_snapshots: dict[str, str] = {}
-            for mod in modifications:
-                resolver = RULE_FILE_MAP.get(mod.get("type"))
-                if resolver:
-                    f = resolver(mod)
-                    if f and f not in file_snapshots and (target_path / f).exists():
-                        try:
-                            file_snapshots[f] = (target_path / f).read_text(encoding="utf-8")
-                        except UnicodeDecodeError:
-                            file_snapshots[f] = (target_path / f).read_text(encoding="latin-1")
-
-            registry = build_rule_registry(modifications)
-            patcher = RulePatcher(registry, target_path)
-            changed = patcher.apply_all()
-
-            # 计算 diff
-            file_diffs: dict[str, list[tuple[str, str]]] = {}
-            for f_name, old_content in file_snapshots.items():
-                f_path = target_path / f_name
-                if f_path.exists():
-                    try:
-                        new_content = f_path.read_text(encoding="utf-8")
-                    except UnicodeDecodeError:
-                        new_content = f_path.read_text(encoding="latin-1")
-                    if old_content != new_content:
-                        file_diffs[f_name] = self._compute_line_diff(old_content, new_content)
-
-            # 显示结果（与自动模式一致的 HTML 布局）
-            self._result_title.setText("手动修改结果")
-            html_parts: list[str] = []
-
-            tag = "复制" if is_copy else "直接修改"
-            html_parts.append(
-                f'<div style="color:#999;font-size:11px;margin-bottom:4px;">'
-                f'目标目录 <span style="color:#666;">{self._escape_html(str(target_path))}</span>'
-                f' &nbsp;<span style="background:#eef;color:#666;padding:1px 6px;">{tag}</span></div>'
-            )
-
-            if warnings:
-                html_parts.append(self._section_header("校验警告", "#fdecea", "#c0392b"))
-                html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
-                    "".join(f'<div style="padding:1px 0;color:#c0392b;">· {self._escape_html(w)}</div>' for w in warnings) +
-                    '</div>')
-
-            html_parts.append(self._section_header(f"修改概要 · {len(modifications)} 项", "#e8f0fe", "#1a56c4"))
-            html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
-                "".join(f'<div style="padding:1px 0;"><span style="color:#1a56c4;">{i}.</span> {self._escape_html(self._describe_mod(m))}</div>'
-                        for i, m in enumerate(modifications, 1)) +
-                '</div>')
-
-            if changed:
-                unique = sorted(set(str(f) for f in changed))
-                html_parts.append(self._section_header(f"文件变更 · {len(unique)}", "#f0f0f0", "#666"))
-                html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
-                    "".join(f'<div style="padding:1px 0;color:#555;">· {self._escape_html(Path(f).name)}</div>' for f in unique) +
-                    '</div>')
-
-            if file_diffs:
-                html_parts.append(self._section_header("修改详情", "#f3e8ff", "#6b21a8"))
-                diff_html: list[str] = []
-                for f_name, diffs in file_diffs.items():
-                    diff_html.append(f'<div style="margin-top:4px;font-weight:bold;color:#6b21a8;">{self._escape_html(Path(f_name).name)}</div>')
-                    for old_line, new_line in diffs:
-                        if old_line and new_line:
-                            diff_html.append(f'<div style="color:#999;">- {self._highlight_diff(old_line, new_line, True)}</div>')
-                            diff_html.append(f'<div style="color:#1e7e34;">+ {self._highlight_diff(old_line, new_line, False)}</div>')
-                        elif new_line:
-                            diff_html.append(f'<div style="color:#1e7e34;font-weight:bold;">+ {self._escape_html(new_line)}</div>')
-                        elif old_line:
-                            diff_html.append(f'<div style="color:#999;text-decoration:line-through;">- {self._escape_html(old_line)}</div>')
-                html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{"".join(diff_html)}</div>')
-
-            self._result_detail.setHtml(
-                '<div style="font-family:Menlo,Consolas,monospace;font-size:12px;">' + "".join(html_parts) + '</div>')
-            self._stack.setCurrentIndex(3)
-
-            # 加入编译队列
-            unique_files = sorted(set(str(f) for f in changed)) if changed else []
-            dir_combo = self._dir_combo if hasattr(self, "_dir_combo") else None
-            customer_name = dir_combo.currentText() if dir_combo else "未知"
-            self._last_result = {
-                "project_path": str(self._get_target_path()),
-                "modified_files": unique_files,
-                "customer_name": customer_name,
-                "analysis_summary": f"手动修改 {len(modifications)} 项",
-            }
-            if hasattr(self, "_enqueue_btn"):
-                self._enqueue_btn.setVisible(True)
-                self._enqueue_btn.setEnabled(True)
-                self._enqueue_btn.setText("＋ 加入编译队列")
-            self._manual_page.hide_progress()
-        except Exception as e:
-            self._logger.error("手动模式执行失败: %s", e, exc_info=True)
-            self._manual_page.hide_progress()
+    def _on_manual_finished(self, result: dict):
+        """手动修改完成（主线程）。"""
+        self._manual_page.hide_progress()
+        error = result.get("error")
+        if error:
+            self._logger.error("手动模式执行失败: %s", error)
             self._result_title.setText("❌ 执行失败")
-            self._result_detail.setPlainText(f"错误: {e}")
+            self._result_detail.setPlainText(f"错误: {error}")
             self._stack.setCurrentIndex(3)
+            return
+
+        html = result.get("html", "")
+        changed_files = result.get("changed_files", [])
+        modifications = result.get("modifications", [])
+
+        self._result_title.setText("手动修改结果")
+        self._result_detail.setHtml(
+            '<div style="font-family:Menlo,Consolas,monospace;font-size:12px;">' + html + '</div>')
+        self._stack.setCurrentIndex(3)
+
+        # 加入编译队列
+        dir_combo = self._dir_combo if hasattr(self, "_dir_combo") else None
+        customer_name = dir_combo.currentText() if dir_combo else "未知"
+        self._last_result = {
+            "project_path": str(self._get_target_path()),
+            "modified_files": changed_files,
+            "customer_name": customer_name,
+            "analysis_summary": f"手动修改 {len(modifications)} 项",
+        }
+        if hasattr(self, "_enqueue_btn"):
+            self._enqueue_btn.setVisible(True)
+            self._enqueue_btn.setEnabled(True)
+            self._enqueue_btn.setText("＋ 加入编译队列")
+
+    def _do_manual_execute(self, modifications: list[dict]) -> dict:
+        """实际执行逻辑（在后台线程中运行，返回结果 dict）。"""
+        from rules.rule_matcher import build_rule_registry
+        from patcher.rule_patcher import RulePatcher
+        from executor.validators import validate_product_model
+
+        source_path = self._get_source_path()
+        target_path = self._get_target_path()
+
+        if not source_path.exists():
+            return {"html": '<div style="color:red;">❌ 源目录不存在</div>', "changed_files": [], "modifications": modifications}
+
+        is_copy = source_path != target_path
+        if is_copy:
+            if target_path.exists():
+                target_path.remote_rmtree()
+            source_path.remote_copytree(target_path)
+
+        warnings = []
+        model_result = validate_product_model(target_path)
+        if model_result.warnings:
+            warnings.extend(model_result.warnings)
+
+        # 快照
+        CTV_DATA_PATH = "overlay/cultraview/common/apps/CtvMiddleware/CultraviewTvService/res/raw/ctv_data.xml"
+        RULE_FILE_MAP = {
+            "build_config": lambda m: m.get("file"),
+            "preinstall": lambda m: "build_ctv_app.txt",
+            "whitelist": lambda m: "etc/whiteList.conf",
+            "prop": lambda m: m.get("file"),
+            "ctv_data": lambda m: CTV_DATA_PATH,
+            "country_list_first": lambda m: CTV_DATA_PATH,
+            "language_first": lambda m: "configs/CtvLanguage.ini",
+            "db_ini": lambda m: m.get("file"),
+            "color_temp": lambda m: "configs/db.ini",
+            "nla": lambda m: "configs/db.ini",
+            "gain": lambda m: "configs/db.ini",
+            "ctv_setting": lambda m: "configs/ctvsetting.xml",
+        }
+        file_snapshots: dict[str, str] = {}
+        for mod in modifications:
+            resolver = RULE_FILE_MAP.get(mod.get("type"))
+            if resolver:
+                f = resolver(mod)
+                if f and f not in file_snapshots and (target_path / f).exists():
+                    try:
+                        file_snapshots[f] = (target_path / f).read_text(encoding="utf-8")
+                    except UnicodeDecodeError:
+                        file_snapshots[f] = (target_path / f).read_text(encoding="latin-1")
+
+        registry = build_rule_registry(modifications)
+        patcher = RulePatcher(registry, target_path)
+        changed = patcher.apply_all()
+
+        # diff
+        file_diffs: dict[str, list[tuple[str, str]]] = {}
+        for f_name, old_content in file_snapshots.items():
+            f_path = target_path / f_name
+            if f_path.exists():
+                try:
+                    new_content = f_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    new_content = f_path.read_text(encoding="latin-1")
+                if old_content != new_content:
+                    file_diffs[f_name] = self._compute_line_diff(old_content, new_content)
+
+        # 构建 HTML 结果
+        html_parts: list[str] = []
+        tag = "复制" if is_copy else "直接修改"
+        html_parts.append(
+            f'<div style="color:#999;font-size:11px;margin-bottom:4px;">'
+            f'目标目录 <span style="color:#666;">{self._escape_html(str(target_path))}</span>'
+            f' &nbsp;<span style="background:#eef;color:#666;padding:1px 6px;">{tag}</span></div>'
+        )
+
+        if warnings:
+            html_parts.append(self._section_header("校验警告", "#fdecea", "#c0392b"))
+            html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
+                "".join(f'<div style="padding:1px 0;color:#c0392b;">· {self._escape_html(w)}</div>' for w in warnings) + '</div>')
+
+        html_parts.append(self._section_header(f"修改概要 · {len(modifications)} 项", "#e8f0fe", "#1a56c4"))
+        html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
+            "".join(f'<div style="padding:1px 0;"><span style="color:#1a56c4;">{i}.</span> {self._escape_html(self._describe_mod(m))}</div>'
+                    for i, m in enumerate(modifications, 1)) + '</div>')
+
+        if changed:
+            unique = sorted(set(str(f) for f in changed))
+            html_parts.append(self._section_header(f"文件变更 · {len(unique)}", "#f0f0f0", "#666"))
+            html_parts.append('<div style="padding:4px 12px;font-size:12px;">' +
+                "".join(f'<div style="padding:1px 0;color:#555;">· {self._escape_html(Path(f).name)}</div>' for f in unique) + '</div>')
+
+        if file_diffs:
+            html_parts.append(self._section_header("修改详情", "#f3e8ff", "#6b21a8"))
+            diff_html: list[str] = []
+            for f_name, diffs in file_diffs.items():
+                diff_html.append(f'<div style="margin-top:4px;font-weight:bold;color:#6b21a8;">{self._escape_html(Path(f_name).name)}</div>')
+                for old_line, new_line in diffs:
+                    if old_line and new_line:
+                        diff_html.append(f'<div style="color:#999;">- {self._highlight_diff(old_line, new_line, True)}</div>')
+                        diff_html.append(f'<div style="color:#1e7e34;">+ {self._highlight_diff(old_line, new_line, False)}</div>')
+                    elif new_line:
+                        diff_html.append(f'<div style="color:#1e7e34;font-weight:bold;">+ {self._escape_html(new_line)}</div>')
+                    elif old_line:
+                        diff_html.append(f'<div style="color:#999;text-decoration:line-through;">- {self._escape_html(old_line)}</div>')
+            html_parts.append(f'<div style="padding:4px 12px;font-size:12px;">{"".join(diff_html)}</div>')
+
+        changed_files = sorted(set(str(f) for f in changed)) if changed else []
+        return {
+            "html": "".join(html_parts),
+            "changed_files": changed_files,
+            "modifications": modifications,
+        }
 
     # ========== 执行任务（自动模式）==========
 
