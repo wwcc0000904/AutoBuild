@@ -486,8 +486,8 @@ class ManualPanel(QWidget):
         scroll, lay = self._make_scroll()
 
         # 蓝屏
-        card = _card("db.ini", "路径: configs/db.ini")
-        gl = _card_layout(card, "db.ini", "路径: configs/db.ini"); gl.setSpacing(2)
+        card = _card("蓝屏开关", "configs/db.ini")
+        gl = _card_layout(card, "蓝屏开关", "configs/db.ini"); gl.setSpacing(2)
         self._db_blue = ToggleRow("蓝屏", ["打开蓝屏", "关闭蓝屏"])
         gl.addWidget(self._db_blue)
         lay.addWidget(card)
