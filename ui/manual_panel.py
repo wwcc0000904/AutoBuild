@@ -927,5 +927,16 @@ class ManualPanel(QWidget):
     def _on_execute(self):
         mods = self.collect_modifications()
         if not mods:
-            self._preview_edit.setPlainText("未做任何修改，无法执行。"); return
+            from PySide6.QtWidgets import QMessageBox
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("提示")
+            box.setText("未做任何修改，请先修改至少一项设置。")
+            box.setStyleSheet(
+                "QMessageBox{background:#ffffff;}"
+                "QMessageBox QLabel{color:#1a1a1a;background:transparent;}"
+                "QPushButton{background:#e0e0e0;color:#1a1a1a;border:none;border-radius:6px;padding:6px 18px;}")
+            box.exec()
+            return
+        self._logger.info("手动模式执行: %d 条修改", len(mods))
         self.execute_requested.emit(mods)

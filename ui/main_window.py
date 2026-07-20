@@ -1828,77 +1828,82 @@ class MainWindow(QMainWindow):
     # ========== 手动模式执行 ==========
 
     def _on_manual_execute(self, modifications: list[dict]) -> None:
-        from rules.rule_matcher import build_rule_registry
-        from patcher.rule_patcher import RulePatcher
-        from executor.validators import validate_product_model
+        self._logger.info("手动模式收到执行信号: %d 条修改", len(modifications))
+        try:
+            from rules.rule_matcher import build_rule_registry
+            from patcher.rule_patcher import RulePatcher
+            from executor.validators import validate_product_model
 
-        source_path = self._get_source_path()
-        target_path = self._get_target_path()
+            source_path = self._get_source_path()
+            target_path = self._get_target_path()
 
-        if not source_path.exists():
-            self._result_title.setText("❌ 错误")
-            self._result_detail.setPlainText(f"源目录不存在: {source_path}")
+            if not source_path.exists():
+                self._result_title.setText("❌ 错误")
+                self._result_detail.setPlainText(f"源目录不存在: {source_path}")
+                self._stack.setCurrentIndex(3)
+                return
+
+            is_copy = source_path != target_path
+            if is_copy:
+                if target_path.exists():
+                    target_path.remote_rmtree()
+                source_path.remote_copytree(target_path)
+
+            warnings = []
+            model_result = validate_product_model(target_path)
+            if model_result.warnings:
+                warnings.extend(model_result.warnings)
+
+            req_text = self.requirement_edit.toPlainText() if hasattr(self, "requirement_edit") else ""
+            registry = build_rule_registry(modifications, req_text)
+            patcher = RulePatcher(registry, target_path)
+            changed = patcher.apply_all()
+
+            self._result_title.setText("📦 手动修改结果")
+            lines = []
+            lines.append(f"源  目  录: {source_path}")
+            lines.append(f"目标目录: {target_path}  ({'复制' if is_copy else '直接修改'})")
+            lines.append("")
+            if warnings:
+                lines.append("⚠ 校验警告:")
+                for w in warnings:
+                    lines.append(f"  - {w}")
+                lines.append("")
+            ensure_status = self._collect_ensure_status(registry)
+            if ensure_status:
+                lines.append("🔍 自动检查项:")
+                lines.extend(ensure_status)
+                lines.append("")
+
+            if changed:
+                unique = sorted(set(str(f) for f in changed))
+                lines.append(f"📝 修改了 {len(unique)} 个文件:")
+                for f in unique:
+                    lines.append(f"  ✏️  {Path(f).name}")
+            else:
+                lines.append("📝 无文件被修改")
+
+            self._result_detail.setPlainText("\n".join(lines))
             self._stack.setCurrentIndex(3)
-            return
 
-        is_copy = source_path != target_path
-        if is_copy:
-            if target_path.exists():
-                target_path.remote_rmtree()
-            source_path.remote_copytree(target_path)
-
-        warnings = []
-        model_result = validate_product_model(target_path)
-        if model_result.warnings:
-            warnings.extend(model_result.warnings)
-
-        req_text = self.requirement_edit.toPlainText() if hasattr(self, "requirement_edit") else ""
-        registry = build_rule_registry(modifications, req_text)
-        patcher = RulePatcher(registry, target_path)
-        changed = patcher.apply_all()
-
-        self._result_title.setText("📦 手动修改结果")
-        lines = []
-        lines.append(f"源  目  录: {source_path}")
-        lines.append(f"目标目录: {target_path}  ({'复制' if is_copy else '直接修改'})")
-        lines.append("")
-        if warnings:
-            lines.append("⚠ 校验警告:")
-            for w in warnings:
-                lines.append(f"  - {w}")
-            lines.append("")
-        # 收集 ensure 状态
-        ensure_status = self._collect_ensure_status(registry)
-        if ensure_status:
-            lines.append("🔍 自动检查项:")
-            lines.extend(ensure_status)
-            lines.append("")
-
-        if changed:
-            unique = sorted(set(str(f) for f in changed))
-            lines.append(f"📝 修改了 {len(unique)} 个文件:")
-            for f in unique:
-                lines.append(f"  ✏️  {Path(f).name}")
-        else:
-            lines.append("📝 无文件被修改")
-
-        self._result_detail.setPlainText("\n".join(lines))
-        self._stack.setCurrentIndex(3)
-
-        # 保存执行结果，等用户确认后加入编译队列（与自动模式一致）
-        unique_files = sorted(set(str(f) for f in changed)) if changed else []
-        dir_combo = self._dir_combo if hasattr(self, "_dir_combo") else None
-        customer_name = dir_combo.currentText() if dir_combo else "未知"
-        self._last_result = {
-            "project_path": str(self._get_target_path()),
-            "modified_files": unique_files,
-            "customer_name": customer_name,
-            "analysis_summary": f"手动修改 {len(modifications)} 项",
-        }
-        if hasattr(self, "_enqueue_btn"):
-            self._enqueue_btn.setVisible(True)
-            self._enqueue_btn.setEnabled(True)
-            self._enqueue_btn.setText("＋ 加入编译队列")
+            unique_files = sorted(set(str(f) for f in changed)) if changed else []
+            dir_combo = self._dir_combo if hasattr(self, "_dir_combo") else None
+            customer_name = dir_combo.currentText() if dir_combo else "未知"
+            self._last_result = {
+                "project_path": str(self._get_target_path()),
+                "modified_files": unique_files,
+                "customer_name": customer_name,
+                "analysis_summary": f"手动修改 {len(modifications)} 项",
+            }
+            if hasattr(self, "_enqueue_btn"):
+                self._enqueue_btn.setVisible(True)
+                self._enqueue_btn.setEnabled(True)
+                self._enqueue_btn.setText("＋ 加入编译队列")
+        except Exception as e:
+            self._logger.error("手动模式执行失败: %s", e, exc_info=True)
+            self._result_title.setText("❌ 执行失败")
+            self._result_detail.setPlainText(f"错误: {e}")
+            self._stack.setCurrentIndex(3)
 
     # ========== 执行任务（自动模式）==========
 
