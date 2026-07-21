@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
     QListView,
+    QScrollArea,
 )
 
 import ai
@@ -271,25 +272,25 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(24, 12, 24, 20)
         content_layout.setSpacing(8)
 
-        # 重置按钮（右上角）
-        reset_row = QHBoxLayout()
-        reset_row.addStretch()
+        # ---- 目录设置卡片（重置按钮内嵌在标题行）----
+        self._dir_card = self._make_card("目录设置")
+        dir_card = self._dir_card
+        dir_layout = dir_card.layout()
+
+        # 重置按钮（卡片标题右侧）
         reset_btn = QPushButton("  重置")
         reset_btn.setIcon(qta.icon("fa5s.undo", color="#888888"))
         reset_btn.setStyleSheet(
             f"QPushButton {{ background-color: transparent; color: {self.CLR_TEXT_DIM}; "
-            f"border: 1px solid {self.CLR_CARD_BORDER}; border-radius: 8px; padding: 8px; font-size: 12px; }}"
+            f"border: 1px solid {self.CLR_CARD_BORDER}; border-radius: 8px; padding: 6px 12px; font-size: 11px; }}"
             f"QPushButton:hover {{ background-color: rgba(0,0,0,0.06); }}"
         )
         reset_btn.clicked.connect(self._reset_all)
-        reset_row.addWidget(reset_btn)
-        content_layout.addLayout(reset_row)
-
-
-        # ---- 目录设置卡片 ----
-        self._dir_card = self._make_card("目录设置")
-        dir_card = self._dir_card
-        dir_layout = dir_card.layout()
+        # 把重置按钮放到卡片标题旁边
+        title_row = QHBoxLayout()
+        title_row.addStretch()
+        title_row.addWidget(reset_btn)
+        dir_layout.insertLayout(0, title_row)
 
         # 第一行: 项目 | 板型 | 区域 | 客户
         row1 = QHBoxLayout()
@@ -373,35 +374,43 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background: transparent;")
 
+        # 包装函数：给页面加滚动条
+        def _scroll_wrap(widget: QWidget) -> QScrollArea:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+            scroll.setWidget(widget)
+            return scroll
+
         # 页面0: 自动模式
         self._ai_page = self._build_ai_page()
-        self._stack.addWidget(self._ai_page)
+        self._stack.addWidget(_scroll_wrap(self._ai_page))
 
-        # 页面1: 手动模式
+        # 页面1: 手动模式（已有内部滚动）
         self._manual_page = ManualPanel()
         self._manual_page.execute_requested.connect(self._on_manual_execute)
         self._stack.addWidget(self._manual_page)
 
         # 页面2: 审核
         self._review_page = QWidget()
-        self._stack.addWidget(self._review_page)
+        self._stack.addWidget(_scroll_wrap(self._review_page))
         self._review_page_layout = QVBoxLayout(self._review_page)
 
         # 页面3: 结果
         self._result_page = self._build_result_page()
-        self._stack.addWidget(self._result_page)
+        self._stack.addWidget(_scroll_wrap(self._result_page))
 
-        # 页面4: 编译构建
+        # 页面4: 编译构建（终端区不需要外层滚动）
         self._build_page = self._build_build_page()
         self._stack.addWidget(self._build_page)
 
-        # 页面5: 编译队列
+        # 页面5: 编译队列（已有内部滚动）
         self._queue_page = QueuePanel(self._build_queue)
         self._queue_page.build_requested.connect(self._on_queue_build_requested)
         self._queue_page.build_all_requested.connect(self._on_build_all)
         self._stack.addWidget(self._queue_page)
 
-        # 页面6: 规则管理
+        # 页面6: 规则管理（已有内部滚动）
         self._rule_page = RulePanel()
         self._stack.addWidget(self._rule_page)
 
