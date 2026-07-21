@@ -1490,8 +1490,9 @@ class MainWindow(QMainWindow):
             path_lbl.setText(path)
             self._browse_path = path
             try:
+                # 一条命令列出所有条目及类型（d=目录，-=文件）
                 stdin, stdout, stderr = self._ssh_client.exec_command(
-                    f'ls -1 --color=never {shlex.quote(path)} 2>/dev/null', timeout=10)
+                    f'ls -1F --color=never {shlex.quote(path)} 2>/dev/null', timeout=10)
                 entries = stdout.read().decode().strip().split('\n')
                 # 加上级目录
                 if path != "/":
@@ -1499,18 +1500,31 @@ class MainWindow(QMainWindow):
                     item.setData(256, str(Path(path).parent))
                     item.setData(257, "dir")
                     file_list.addItem(item)
+                dirs = []
+                files = []
                 for name in sorted(entries):
                     if not name or name.startswith('.'):
                         continue
+                    # ls -F 会在目录后加 /，可执行文件加 *，链接加 @
+                    if name.endswith('/'):
+                        name = name[:-1]
+                        dirs.append(name)
+                    elif name.endswith('*') or name.endswith('@'):
+                        name = name[:-1]
+                        files.append(name)
+                    else:
+                        files.append(name)
+                for name in dirs:
                     full = f"{path}/{name}" if path != "/" else f"/{name}"
-                    # 判断是否目录
-                    stdin2, stdout2, _ = self._ssh_client.exec_command(
-                        f'test -d {shlex.quote(full)} && echo D || echo F', timeout=5)
-                    is_dir = stdout2.read().decode().strip() == "D"
-                    icon = "📁" if is_dir else "📄"
-                    item = QListWidgetItem(f"{icon}  {name}")
+                    item = QListWidgetItem(f"📁  {name}")
                     item.setData(256, full)
-                    item.setData(257, "dir" if is_dir else "file")
+                    item.setData(257, "dir")
+                    file_list.addItem(item)
+                for name in files:
+                    full = f"{path}/{name}" if path != "/" else f"/{name}"
+                    item = QListWidgetItem(f"📄  {name}")
+                    item.setData(256, full)
+                    item.setData(257, "file")
                     file_list.addItem(item)
             except Exception as e:
                 file_list.addItem(f"错误: {e}")
