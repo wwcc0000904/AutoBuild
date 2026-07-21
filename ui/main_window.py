@@ -1467,7 +1467,7 @@ class MainWindow(QMainWindow):
 
         # 路径栏
         path_row = QHBoxLayout()
-        self._browse_path = self._get_build_code_dir()
+        self._browse_path = self._get_build_code_dir() + "/out_emmc"
         path_lbl = QLabel(self._browse_path)
         path_lbl.setStyleSheet("font-size: 12px; color: #666; padding: 4px;")
         path_lbl.setWordWrap(True)
