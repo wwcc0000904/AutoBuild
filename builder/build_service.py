@@ -225,6 +225,24 @@ class BuildService:
                 self._current.set_status("failed")
                 self._current.set_error("未连接 SSH 客户端")
                 self._current.append_log("编译失败: 未连接 SSH 客户端\n")
+                self._fire_finished(task_id, "failed", 1)
+            return
+
+        try:
+            self._run_build_inner(task_id, command, cancel_event)
+        except Exception as e:
+            self._logger.error("编译异常: %s", e, exc_info=True)
+            if self._current and self._current.task_id == task_id:
+                self._current.set_status("failed")
+                self._current.append_log(f"\n编译异常: {e}\n")
+            self._fire_finished(task_id, "failed", 1)
+
+    def _run_build_inner(self, task_id: str, command: str, cancel_event: threading.Event) -> None:
+        if not self._ssh:
+            if self._current and self._current.task_id == task_id:
+                self._current.set_status("failed")
+                self._current.set_error("未连接 SSH 客户端")
+                self._current.append_log("编译失败: 未连接 SSH 客户端\n")
             return
 
         # 从命令中提取订单名（最后一个参数），用于精确应答选单
@@ -298,7 +316,24 @@ class BuildService:
                             is_busy = True
                             break
             if is_busy:
-                raise RuntimeError(f"tmux 会话 [{session_name}] 正在编译中，请等待完成或先取消")
+                # 检查是否有实际的编译进程（make/ctvbuild），而不只是 shell
+                has_build = False
+                for pid_line in pane_pid_out.strip().splitlines():
+                    pid = pid_line.strip()
+                    if pid:
+                        _, build_check, _ = self._exec(
+                            f"ps -o comm= -P {shlex.quote(pid)} 2>/dev/null"
+                        )
+                        if any(p in build_check for p in ("make", "ctvbuild", "gcc", "g++")):
+                            has_build = True
+                            break
+                if has_build:
+                    raise RuntimeError(f"tmux 会话 [{session_name}] 正在编译中，请等待完成或先取消")
+                else:
+                    # 旧会话空闲，杀掉重建
+                    self._logger.info("清理旧 tmux 会话: %s", session_name)
+                    self._exec(f"tmux kill-session -t {shlex.quote(session_name)} 2>/dev/null")
+                    is_busy = False
             # 会话空闲，复用已有会话，在里面执行新编译
             self._exec(setup_cmd)  # 先写脚本文件
             self._exec(f"tmux send-keys -t {shlex.quote(session_name)} {shlex.quote(script_file)} Enter")

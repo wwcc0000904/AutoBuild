@@ -254,8 +254,9 @@ class MainWindow(QMainWindow):
             ("  编译构建", 5),
             ("  规则管理", 6),
             ("  网盘上传", 7),
+            ("  代码提交", 8),
         ]
-        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt"]
+        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt", "fa5s.code-branch"]
         for (text, idx), icon_name in zip(nav_items, nav_icons):
             btn = QPushButton(text)
             btn.setIcon(qta.icon(icon_name, color="#888888"))
@@ -422,6 +423,11 @@ class MainWindow(QMainWindow):
         self._upload_page = self._build_upload_page()
         self._stack.addWidget(_scroll_wrap(self._upload_page))
 
+        # 页面8: 代码提交
+        from ui.gerrit_panel import GerritPanel
+        self._gerrit_page = GerritPanel()
+        self._stack.addWidget(_scroll_wrap(self._gerrit_page))
+
         self._stack.setCurrentIndex(0)
         content_layout.addWidget(self._stack, 1)
 
@@ -460,7 +466,7 @@ class MainWindow(QMainWindow):
         )
 
     def _update_nav_icons(self, active_idx: int):
-        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs", "fa5s.cloud-upload-alt"]
+        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt", "fa5s.code-branch"]
         for i, btn in enumerate(self._nav_btns):
             color = "#1a1a1a" if i == active_idx else "#888888"
             btn.setIcon(qta.icon(nav_icon_names[i], color=color))
@@ -982,7 +988,7 @@ class MainWindow(QMainWindow):
     def _switch_mode(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
         # 规则管理和编译队列页面隐藏目录设置
-        self._dir_card.setVisible(index not in (4, 5, 6, 7))
+        self._dir_card.setVisible(index not in (4, 5, 6, 7, 8))
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(self._nav_btn_style(i == index))
         self._update_nav_icons(index)
@@ -1734,7 +1740,7 @@ class MainWindow(QMainWindow):
         """安全发送数据到 shell channel，SSH 断连时静默处理。"""
         try:
             if self._shell_channel and self._shell_running:
-                self._shell_send(data)
+                self._shell_channel.send(data)
         except Exception:
             self._shell_running = False
 
@@ -1938,11 +1944,22 @@ class MainWindow(QMainWindow):
             self._build_log.append("[编译] 当前没有可取消的任务")
 
     def _exec_quick_cmd(self, cmd: str) -> None:
-        """快捷按钮执行命令。"""
-        if self._shell_channel and self._shell_running:
-            self._shell_send(cmd + "\n")
-        else:
-            self._build_log.append("[错误] shell 会话未建立")
+        """快捷按钮执行命令（直接 SSH 执行，不依赖 shell 会话）。"""
+        if not (hasattr(self, '_ssh_client') and self._ssh_client):
+            self._build_log.append("[错误] 未连接 SSH")
+            return
+        import threading
+        def _do():
+            try:
+                stdin, stdout, stderr = self._ssh_client.exec_command(cmd, timeout=15)
+                out = stdout.read().decode("utf-8", errors="replace")
+                err = stderr.read().decode("utf-8", errors="replace")
+                exit_code = stdout.channel.recv_exit_status()
+                result = out.strip() or err.strip()
+                self._log_emitter.log_received.emit(f"[cmd] {cmd}\n{result}\n" if result else f"[cmd] {cmd}\n(无输出)\n")
+            except Exception as e:
+                self._log_emitter.log_received.emit(f"[cmd] {cmd}\n[错误] {e}\n")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _on_completion_result(self, result: str) -> None:
         """Tab 补全结果回调（主线程）。"""
@@ -2165,7 +2182,19 @@ class MainWindow(QMainWindow):
         if self._shell_channel and self._shell_running:
             self._shell_send(cmd + "\n")
         else:
-            self._build_log.append("[错误] shell 会话未建立")
+            # shell 不可用，用 SSH 直接执行
+            if hasattr(self, '_ssh_client') and self._ssh_client:
+                import threading
+                def _do():
+                    try:
+                        stdin, stdout, stderr = self._ssh_client.exec_command(cmd, timeout=15)
+                        out = stdout.read().decode("utf-8", errors="replace")
+                        self._log_emitter.log_received.emit(f"$ {cmd}\n{out}" if out.strip() else f"$ {cmd}\n(无输出)\n")
+                    except Exception as e:
+                        self._log_emitter.log_received.emit(f"$ {cmd}\n[错误] {e}\n")
+                threading.Thread(target=_do, daemon=True).start()
+            else:
+                self._build_log.append("[错误] 未连接 SSH")
 
     def _on_build_log_append(self, text: str) -> None:
         """实时追加日志（由信号驱动，在主线程执行）。"""
@@ -2860,15 +2889,86 @@ class MainWindow(QMainWindow):
             self._upload_error_lbl.setText("❌ 未找到编译产物路径")
             self._upload_error_lbl.setVisible(True)
 
+    def _show_build_progress(self, text: str = "正在启动编译…"):
+        """显示半透明进度浮层（阻塞期间）。"""
+        from PySide6.QtCore import Qt
+        if hasattr(self, '_build_overlay') and self._build_overlay:
+            self._build_overlay.close()
+            self._build_overlay.deleteLater()
+
+        from PySide6.QtWidgets import QProgressBar
+        overlay = QWidget(self)
+        overlay.setObjectName("buildOverlay")
+        overlay.setStyleSheet("QWidget#buildOverlay { background: rgba(0,0,0,0.3); }")
+        overlay.setGeometry(self.rect())
+
+        card = QWidget(overlay)
+        card.setStyleSheet("QWidget { background: #ffffff; border-radius: 12px; }")
+        card_w, card_h = 300, 100
+        card.setGeometry(
+            (self.width() - card_w) // 2, (self.height() - card_h) // 2,
+            card_w, card_h
+        )
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(10)
+
+        lbl = QLabel(text)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("font-size: 13px; color: #1a1a1a; background: transparent;")
+        cl.addWidget(lbl)
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)  # 不确定进度（转圈）
+        bar.setStyleSheet(
+            "QProgressBar { border: 1px solid #e0e0e0; border-radius: 4px; background: #f0f0f0; height: 8px; }"
+            "QProgressBar::chunk { background: #4a90d9; border-radius: 4px; }"
+        )
+        cl.addWidget(bar)
+
+        overlay.show()
+        self._build_overlay = overlay
+
+    def _hide_build_progress(self):
+        """隐藏进度浮层。"""
+        if hasattr(self, '_build_overlay') and self._build_overlay:
+            self._build_overlay.close()
+            self._build_overlay.deleteLater()
+            self._build_overlay = None
+
     def _start_queue_build(self, queue_id: str, auto_chain: bool = False) -> None:
         try:
             self._auto_chain = auto_chain
+            self._show_build_progress()
             self._logger.info("=== _start_queue_build: %s (auto_chain=%s) ===", queue_id, auto_chain)
             item = self._build_queue.get_by_id(queue_id)
             if not item:
                 self._logger.error("队列项不存在: %s", queue_id)
                 return
-            
+
+            # ── 命令项：直接通过 SSH 执行 ──
+            if item.kind == "command":
+                self._build_queue.update_status(queue_id, "building")
+                self._switch_mode(5)  # 切换到编译构建页面
+                self._build_log.append(f"[命令] 执行: {item.command}")
+                self._current_build_queue_id = queue_id
+                import threading
+                def _run_cmd():
+                    try:
+                        stdin, stdout, stderr = self._ssh_client.exec_command(item.command, timeout=120)
+                        exit_code = stdout.channel.recv_exit_status()
+                        out = stdout.read().decode("utf-8", errors="replace")
+                        if out.strip():
+                            self._log_emitter.log_received.emit(out.strip())
+                        status = "succeeded" if exit_code == 0 else "failed"
+                        self._log_emitter.finished.emit(status, exit_code)
+                    except Exception as e:
+                        self._logger.error("命令执行失败: %s", e)
+                        self._log_emitter.finished.emit("failed", -1)
+                threading.Thread(target=_run_cmd, daemon=True).start()
+                self._hide_build_progress()
+                return
+
             self._logger.info("从队列开始编译: %s", item.customer_name)
             
             # 检查同一项目（code 目录）是否已在编译
@@ -2893,12 +2993,14 @@ class MainWindow(QMainWindow):
                             QMessageBox.Icon.Warning, "编译冲突",
                             f"项目 [{cur_proj}] 正在被 [{qi.customer_name}] 编译中，请等待完成后再试。"
                         ).exec()
+                        self._hide_build_progress()
                         return
-            
+
             # 检查是否已有编译任务在运行
             handle = self._build_service.current_handle()
             if handle and handle.is_running():
                 self._build_log.append("[编译] 已有编译任务在运行")
+                self._hide_build_progress()
                 return
             
             # 更新队列状态
@@ -2933,8 +3035,10 @@ class MainWindow(QMainWindow):
             self._build_queue.update_status(queue_id, "building", task_id=build_job.task_id)
             self._build_log.append(f"[编译] 任务ID: {build_job.task_id}")
             self._logger.info("编译已提交: %s", build_job.task_id)
+            self._hide_build_progress()
         except Exception as e:
             self._logger.error("编译启动失败: %s", e, exc_info=True)
+            self._hide_build_progress()
             self._build_log.append(f"[错误] {e}")
 
     def on_run(self) -> None:

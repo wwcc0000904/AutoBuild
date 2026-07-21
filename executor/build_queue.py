@@ -35,6 +35,8 @@ class QueueItem:
     exit_code: Optional[int] = None
     task_id: str = ""
     build_output: str = ""  # 编译产物 zip 路径
+    kind: str = "build"     # "build" | "command"
+    command: str = ""       # kind="command" 时要执行的命令
 
 
 class BuildQueue:
@@ -74,6 +76,24 @@ class BuildQueue:
         self._save()
         self._notify_change()
         self._logger.info("已添加到编译队列: %s (%s)", customer_name, item.id)
+        return item
+
+    def add_command(self, command: str, label: str = "") -> QueueItem:
+        """添加一条命令到队列（如 ctvbuild clean）。"""
+        item = QueueItem(
+            id=uuid.uuid4().hex[:12],
+            customer_name=label or command,
+            project_path="",
+            modified_files=[],
+            analysis_summary="",
+            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            kind="command",
+            command=command,
+        )
+        self._items.append(item)
+        self._save()
+        self._notify_change()
+        self._logger.info("已添加命令到队列: %s (%s)", command, item.id)
         return item
 
     def remove(self, item_id: str) -> bool:

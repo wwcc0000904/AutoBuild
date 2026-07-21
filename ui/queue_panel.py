@@ -41,6 +41,50 @@ class QueueCard(QFrame):
     def _build_ui(self) -> None:
         item = self._item
         self.setFrameShape(QFrame.Shape.NoFrame)
+
+        # ── 命令卡片（简洁样式）──
+        if item.kind == "command":
+            self.setStyleSheet(
+                "QueueCard { background: #fff8e1; border: 1px solid #ffe082;"
+                " border-radius: 8px; }"
+            )
+            outer = QHBoxLayout(self)
+            outer.setContentsMargins(14, 8, 14, 8)
+            outer.setSpacing(12)
+
+            grip = QLabel("⋮⋮")
+            grip.setStyleSheet("color:#ccc; font-size:16px;")
+            outer.addWidget(grip, 0)
+
+            cmd_icon = QLabel("🧹")
+            cmd_icon.setStyleSheet("font-size: 18px; background: transparent;")
+            outer.addWidget(cmd_icon, 0)
+
+            cmd_lbl = QLabel(item.command)
+            cmd_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #e65100; background: transparent;")
+            outer.addWidget(cmd_lbl, 1)
+
+            status_text, status_fg, status_bg = STATUS_STYLE.get(item.status, ("未知", "#333", "#eee"))
+            badge = QLabel(status_text)
+            badge.setFixedHeight(20)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet(
+                f"background:{status_bg}; color:{status_fg}; border-radius:10px;"
+                f" padding:0 10px; font-size:11px; font-weight:bold;")
+            outer.addWidget(badge, 0)
+
+            if item.status != QueueItemStatus.BUILDING:
+                remove_btn = QPushButton("移除")
+                remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                remove_btn.setStyleSheet(
+                    "QPushButton { background:transparent; color:#e17055; border:1px solid #e17055;"
+                    " padding:4px 12px; font-size:11px; border-radius:6px; }"
+                    "QPushButton:hover { background:#e17055; color:white; }")
+                remove_btn.clicked.connect(lambda: self.remove_requested.emit(item.id))
+                outer.addWidget(remove_btn, 0)
+            return
+
+        # ── 编译卡片（正常样式）──
         self.setStyleSheet(
             "QueueCard { background: #ffffff; border: 1px solid #e5e5e5;"
             " border-radius: 8px; }"
@@ -286,6 +330,15 @@ class QueuePanel(QWidget):
         layout.addWidget(self._list, 1)
 
         btn_row = QHBoxLayout()
+        self._insert_clean_btn = QPushButton("🧹 插入 Clean")
+        self._insert_clean_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._insert_clean_btn.setStyleSheet(
+            "QPushButton { background:#fff3e0; color:#e65100; border:1px solid #ffcc80;"
+            " padding:8px 16px; font-size:13px; border-radius:6px; }"
+            "QPushButton:hover { background:#ffe0b2; }"
+        )
+        self._insert_clean_btn.clicked.connect(self._on_insert_clean)
+        btn_row.addWidget(self._insert_clean_btn)
         btn_row.addStretch()
         self._build_all_btn = QPushButton("全部开始编译")
         self._build_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -363,6 +416,10 @@ class QueuePanel(QWidget):
         reply = self._styled_question("确认", f"确定依次编译 {len(pending)} 项？")
         if reply == QMessageBox.StandardButton.Yes:
             self.build_all_requested.emit()
+
+    def _on_insert_clean(self) -> None:
+        """在队列末尾插入一个 ctvbuild clean 命令。"""
+        self._build_queue.add_command("ctvbuild clean", label="ctvbuild clean")
 
     def _on_retry(self, queue_id: str) -> None:
         item = self._build_queue.get_by_id(queue_id)
