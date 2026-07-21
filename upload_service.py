@@ -162,13 +162,13 @@ class UploadService:
         )
 
     def find_latest_zip(self, code_dir: str) -> Optional[str]:
-        """查找编译产物中最新的 zip 文件。"""
-        # 在 out 目录和 code 目录下查找
+        """查找编译产物中最新的 zip 文件（只搜 out_emmc 目录）。"""
         cmd = (
-            f"find {shlex.quote(code_dir)}/out {shlex.quote(code_dir)} "
-            f"-maxdepth 3 -name '*.zip' -type f 2>/dev/null "
-            f"| xargs ls -t 2>/dev/null | head -1"
+            f"find {shlex.quote(code_dir)}/out_emmc "
+            f"-maxdepth 3 -name '*.zip' -type f "
+            f"-printf '%T@\\t%p\\n' 2>/dev/null "
+            f"| sort -rn | head -1 | cut -f2-"
         )
-        _, out, _ = self._exec(cmd, timeout=15)
+        _, out, _ = self._exec(cmd, timeout=10)
         path = out.strip()
         return path if path else None

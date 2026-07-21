@@ -148,6 +148,8 @@ class MainWindow(QMainWindow):
         self._wdav_user = ""
         self._wdav_pass = ""
         self._wdav_folder = ""
+        self._upload_queue: list[str] = []
+        self._upload_results: list[dict] = []
         self._load_webdav_settings()
 
         # 实时日志信号
@@ -409,6 +411,7 @@ class MainWindow(QMainWindow):
         self._queue_page = QueuePanel(self._build_queue)
         self._queue_page.build_requested.connect(self._on_queue_build_requested)
         self._queue_page.build_all_requested.connect(self._on_build_all)
+        self._queue_page.upload_requested.connect(self._on_queue_upload)
         self._stack.addWidget(self._queue_page)
 
         # 页面6: 规则管理（已有内部滚动）
@@ -1258,6 +1261,7 @@ class MainWindow(QMainWindow):
     def _build_upload_page(self) -> QWidget:
         """网盘上传页面。"""
         from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QProgressBar
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(page)
@@ -1304,72 +1308,73 @@ class MainWindow(QMainWindow):
         upload_card = self._make_card("上传文件")
         ul = upload_card.layout()
 
-        # zip 文件路径
+        # 待上传队列
+        queue_header = QHBoxLayout()
+        self._upload_queue_title = QLabel("待上传列表 (0)")
+        self._upload_queue_title.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {self.CLR_TEXT}; background: transparent;")
+        queue_header.addWidget(self._upload_queue_title)
+        queue_header.addStretch()
+        remove_btn = QPushButton("  移除选中")
+        remove_btn.setStyleSheet(self._small_btn_style())
+        remove_btn.clicked.connect(self._on_remove_selected)
+        queue_header.addWidget(remove_btn)
+        clear_btn = QPushButton("  清空列表")
+        clear_btn.setStyleSheet(self._small_btn_style())
+        clear_btn.clicked.connect(self._on_clear_queue)
+        queue_header.addWidget(clear_btn)
+        ul.addLayout(queue_header)
+
+        from PySide6.QtWidgets import QListWidget
+        self._upload_queue_list = QListWidget()
+        self._upload_queue_list.setMinimumHeight(80)
+        self._upload_queue_list.setStyleSheet(
+            "QListWidget { background: #ffffff; color: #1a1a1a; border: 1px solid #d0d0d0;"
+            " border-radius: 6px; font-size: 12px; }"
+            "QListWidget::item { padding: 6px 8px; }"
+            "QListWidget::item:selected { background: #d0e0f5; }"
+        )
+        ul.addWidget(self._upload_queue_list)
+
+        # 操作按钮行
         r3 = QHBoxLayout(); r3.setSpacing(10)
-        r3.addWidget(QLabel("文件路径:"))
-        self._upload_zip_input = QLineEdit()
-        self._upload_zip_input.setStyleSheet(self._input_style())
-        self._upload_zip_input.setPlaceholderText("远程服务器上的 zip 文件路径")
-        r3.addWidget(self._upload_zip_input, 1)
-        browse_btn = QPushButton("  浏览服务器")
+        browse_btn = QPushButton("  浏览服务器添加")
         browse_btn.setIcon(qta.icon("fa5s.folder-open", color="#888"))
         browse_btn.setStyleSheet(self._small_btn_style())
         browse_btn.clicked.connect(self._on_browse_server)
         r3.addWidget(browse_btn)
-        find_btn = QPushButton("  查找最新 zip")
-        find_btn.setStyleSheet(self._small_btn_style())
-        find_btn.clicked.connect(self._on_find_zip)
-        r3.addWidget(find_btn)
-        ul.addLayout(r3)
-
-        # 上传按钮
-        r4 = QHBoxLayout(); r4.setSpacing(10); r4.addStretch()
-        self._upload_btn = QPushButton("  上传到网盘")
+        r3.addStretch()
+        self._upload_btn = QPushButton("  全部上传")
         self._upload_btn.setIcon(qta.icon("fa5s.cloud-upload-alt", color="#1a1a1a"))
         self._upload_btn.setStyleSheet(self._accent_btn_style())
         self._upload_btn.clicked.connect(self._on_upload)
-        r4.addWidget(self._upload_btn)
-        ul.addLayout(r4)
+        r3.addWidget(self._upload_btn)
+        ul.addLayout(r3)
 
-        # 上传结果（可复制）
-        self._upload_result_widget = QWidget()
-        self._upload_result_widget.setVisible(False)
-        self._upload_result_widget.setStyleSheet(
-            f"QWidget {{ background: #f0faf0; border: 1px solid #c0e0c0; border-radius: 8px; padding: 8px; }}")
-        res_lay = QVBoxLayout(self._upload_result_widget)
-        res_lay.setContentsMargins(12, 8, 12, 8)
-        res_lay.setSpacing(6)
+        # 上传进度条
+        self._upload_progress_bar = QProgressBar()
+        self._upload_progress_bar.setStyleSheet(
+            "QProgressBar { border: 1px solid #d0d0d0; border-radius: 6px; text-align: center;"
+            " font-size: 11px; background: #f0f0f0; height: 22px; }"
+            "QProgressBar::chunk { background: #4a90d9; border-radius: 5px; }"
+        )
+        self._upload_progress_bar.setValue(0)
+        self._upload_progress_bar.setVisible(False)
+        ul.addWidget(self._upload_progress_bar)
 
-        self._upload_name_lbl = QLabel("")
-        self._upload_name_lbl.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT}; background: transparent;")
-        res_lay.addWidget(self._upload_name_lbl)
+        # 上传状态文字
+        self._upload_progress_lbl = QLabel("")
+        self._upload_progress_lbl.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT}; background: transparent; padding: 4px;")
+        self._upload_progress_lbl.setVisible(False)
+        ul.addWidget(self._upload_progress_lbl)
 
-        link_row = QHBoxLayout(); link_row.setSpacing(8)
-        link_label = QLabel("软件路径:")
-        link_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT_DIM}; background: transparent;")
-        link_row.addWidget(link_label)
-        self._upload_link_lbl = QLabel("")
-        self._upload_link_lbl.setStyleSheet(f"font-size: 12px; color: #4a90d9; background: transparent;")
-        self._upload_link_lbl.setWordWrap(True)
-        self._upload_link_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        link_row.addWidget(self._upload_link_lbl, 1)
-        copy_link_btn = QPushButton("  复制软件路径")
-        copy_link_btn.setIcon(qta.icon("fa5s.copy", color="#888"))
-        copy_link_btn.setStyleSheet(self._small_btn_style())
-        copy_link_btn.clicked.connect(self._on_copy_upload_link)
-        link_row.addWidget(copy_link_btn)
-        copy_all_btn = QPushButton("  复制全部")
-        copy_all_btn.setIcon(qta.icon("fa5s.copy", color="#888"))
-        copy_all_btn.setStyleSheet(self._small_btn_style())
-        copy_all_btn.clicked.connect(self._on_copy_upload_all)
-        link_row.addWidget(copy_all_btn)
-        res_lay.addLayout(link_row)
-
-        self._upload_status_lbl = QLabel("")
-        self._upload_status_lbl.setStyleSheet(f"font-size: 11px; color: {self.CLR_TEXT_DIM}; background: transparent;")
-        res_lay.addWidget(self._upload_status_lbl)
-
-        ul.addWidget(self._upload_result_widget)
+        # 多文件结果区域
+        self._upload_results_container = QWidget()
+        self._upload_results_container.setStyleSheet("background: transparent;")
+        self._upload_results_layout = QVBoxLayout(self._upload_results_container)
+        self._upload_results_layout.setContentsMargins(0, 0, 0, 0)
+        self._upload_results_layout.setSpacing(8)
+        self._upload_results_container.setVisible(False)
+        ul.addWidget(self._upload_results_container)
 
         # 错误提示
         self._upload_error_lbl = QLabel("")
@@ -1436,23 +1441,8 @@ class MainWindow(QMainWindow):
         self._wdav_folder = folder
         self._upload_error_lbl.setText("")
         self._upload_error_lbl.setVisible(False)
-        self._upload_name_lbl.setText("✓ 网盘设置已保存")
-        self._upload_link_lbl.setText("")
-        self._upload_status_lbl.setText("")
-        self._upload_result_widget.setVisible(True)
-
-    def _on_find_zip(self):
-        code_dir = self._get_build_code_dir()
-        self._upload_error_lbl.setVisible(False)
-        self._upload_status_lbl.setText("正在查找最新 zip 文件…")
-        import threading
-        def _find():
-            try:
-                path = self._upload_service.find_latest_zip(code_dir)
-                self._log_emitter.completion_result.emit(f"__ZIP__{path}" if path else "__ZIP__NOT_FOUND")
-            except Exception as e:
-                self._log_emitter.completion_result.emit(f"__ZIP__ERROR:{e}")
-        threading.Thread(target=_find, daemon=True).start()
+        self._upload_progress_lbl.setText("✓ 网盘设置已保存")
+        self._upload_progress_lbl.setVisible(True)
 
     def _on_browse_server(self):
         """打开远程文件浏览器对话框。"""
@@ -1576,27 +1566,26 @@ class MainWindow(QMainWindow):
         import shlex
         _load(self._browse_path)
 
-        # 双击进入目录
+        # 双击进入目录或加入队列
         def _on_dblclick(item):
             path = item.data(256)
             kind = item.data(257)
             if kind == "dir":
                 _load(path)
             else:
-                self._upload_zip_input.setText(path)
+                self._on_add_to_queue(path)
                 dlg.accept()
         file_list.itemDoubleClicked.connect(_on_dblclick)
 
         # 底部按钮
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        select_btn = QPushButton("  选择当前路径")
+        select_btn = QPushButton("  添加到队列")
         select_btn.setStyleSheet(self._accent_btn_style())
         def _select():
-            # 选中当前选中的文件，或当前目录
             current = file_list.currentItem()
             if current and current.data(257) == "file":
-                self._upload_zip_input.setText(current.data(256))
+                self._on_add_to_queue(current.data(256))
                 dlg.accept()
             elif current and current.data(257) == "dir":
                 _load(current.data(256))
@@ -1610,48 +1599,136 @@ class MainWindow(QMainWindow):
 
         dlg.exec()
 
-    def _on_copy_upload_link(self):
-        link = self._upload_link_lbl.text()
-        if link:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(link)
-            self._upload_status_lbl.setText("✓ 链接已复制到剪贴板")
+    # ── 上传队列管理 ──
 
-    def _on_copy_upload_all(self):
-        name = self._upload_name_lbl.text()
-        link = self._upload_link_lbl.text()
-        text = f"{name}\n{link}" if link else name
-        if text:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(text)
-            self._upload_status_lbl.setText("✓ 已复制到剪贴板")
+    def _on_add_to_queue(self, path: str):
+        """添加文件到上传队列。"""
+        if path in self._upload_queue:
+            self._upload_progress_lbl.setText(f"⚠ 已在队列中: {path.rsplit('/', 1)[-1]}")
+            self._upload_progress_lbl.setVisible(True)
+            return
+        self._upload_queue.append(path)
+        name = path.rsplit("/", 1)[-1] if "/" in path else path
+        from PySide6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(f"📄  {name}")
+        self._upload_queue_list.addItem(item)
+        self._upload_queue_title.setText(f"待上传列表 ({len(self._upload_queue)})")
+        self._upload_progress_lbl.setText(f"✓ 已添加: {name}")
+        self._upload_progress_lbl.setVisible(True)
+
+    def _on_remove_selected(self):
+        """移除队列中选中的文件。"""
+        row = self._upload_queue_list.currentRow()
+        if row < 0 or row >= len(self._upload_queue):
+            return
+        removed = self._upload_queue.pop(row)
+        self._upload_queue_list.takeItem(row)
+        self._upload_queue_title.setText(f"待上传列表 ({len(self._upload_queue)})")
+
+    def _on_clear_queue(self):
+        """清空上传队列。"""
+        self._upload_queue.clear()
+        self._upload_queue_list.clear()
+        self._upload_queue_title.setText("待上传列表 (0)")
+        self._upload_progress_lbl.setText("✓ 已清空")
+        self._upload_progress_lbl.setVisible(True)
 
     def _on_upload(self):
         user = self._wdav_user_input.text().strip()
         pwd = self._wdav_pass_input.text().strip()
         folder = self._wdav_folder_input.text().strip()
-        zip_path = self._upload_zip_input.text().strip()
         if not user or not pwd:
             self._upload_error_lbl.setText("❌ 请先填写网盘账号和密码")
             self._upload_error_lbl.setVisible(True)
             return
-        if not zip_path:
-            self._upload_error_lbl.setText("❌ 请填写或查找 zip 文件路径")
+        if not self._upload_queue:
+            self._upload_error_lbl.setText("❌ 请先添加要上传的文件")
             self._upload_error_lbl.setVisible(True)
             return
+        # 复制队列快照，启动后台批量上传
+        files = list(self._upload_queue)
+        total = len(files)
         self._upload_btn.setEnabled(False)
         self._upload_btn.setText("  上传中…")
         self._upload_error_lbl.setVisible(False)
-        self._upload_name_lbl.setText("正在上传…")
-        self._upload_link_lbl.setText("")
-        self._upload_status_lbl.setText("")
-        self._upload_result_widget.setVisible(True)
+        self._upload_results.clear()
+        self._upload_progress_bar.setMaximum(total)
+        self._upload_progress_bar.setValue(0)
+        self._upload_progress_bar.setVisible(True)
+        self._upload_progress_lbl.setText(f"准备上传 0/{total}…")
+        self._upload_progress_lbl.setVisible(True)
+        # 清空旧结果
+        while self._upload_results_layout.count():
+            child = self._upload_results_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        self._upload_results_container.setVisible(False)
         import threading
         def _do():
-            result = self._upload_service.upload_file(zip_path, folder, user, pwd)
-            self._log_emitter.completion_result.emit(
-                f"__UPLOAD__{'OK' if result.success else 'FAIL'}|{result.filename}|{result.link}|{result.size}|{result.error}")
+            for i, path in enumerate(files):
+                self._log_emitter.completion_result.emit(f"__UPLOAD_PROGRESS__{i}|{total}")
+                result = self._upload_service.upload_file(path, folder, user, pwd)
+                self._log_emitter.completion_result.emit(
+                    f"__UPLOAD_ITEM__{'OK' if result.success else 'FAIL'}|{result.filename}|{result.link}|{result.size}|{result.error}")
+            self._log_emitter.completion_result.emit(f"__UPLOAD_DONE__{total}")
         threading.Thread(target=_do, daemon=True).start()
+
+    def _add_upload_result_card(self, idx: int, success: bool, filename: str,
+                                link: str, size: str, error: str):
+        """添加一个上传结果卡片到结果区域。"""
+        from PySide6.QtCore import Qt
+        card = QWidget()
+        bg = "#f0faf0" if success else "#fff0f0"
+        border = "#c0e0c0" if success else "#e0c0c0"
+        card.setStyleSheet(
+            f"QWidget {{ background: {bg}; border: 1px solid {border};"
+            f" border-radius: 8px; padding: 6px; }}")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(12, 8, 12, 8)
+        cl.setSpacing(4)
+
+        icon = "✓" if success else "✗"
+        cl3 = QLabel(f"{icon} {filename}  ({size})")
+        cl3.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT}; font-weight: bold; background: transparent;")
+        cl.addWidget(cl3)
+
+        if success and link:
+            row = QHBoxLayout(); row.setSpacing(8)
+            lbl = QLabel("软件路径:")
+            lbl.setStyleSheet(f"font-size: 12px; color: {self.CLR_TEXT_DIM}; background: transparent;")
+            row.addWidget(lbl)
+            link_lbl = QLabel(link)
+            link_lbl.setStyleSheet(f"font-size: 12px; color: #4a90d9; background: transparent;")
+            link_lbl.setWordWrap(True)
+            link_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            row.addWidget(link_lbl, 1)
+
+            def _copy_one():
+                from PySide6.QtWidgets import QApplication
+                QApplication.clipboard().setText(f"软件名称: {filename}\n软件路径: {link}")
+
+            def _copy_path():
+                from PySide6.QtWidgets import QApplication
+                QApplication.clipboard().setText(link)
+
+            btn1 = QPushButton("  复制全部")
+            btn1.setIcon(qta.icon("fa5s.copy", color="#888"))
+            btn1.setStyleSheet(self._small_btn_style())
+            btn1.clicked.connect(_copy_one)
+            row.addWidget(btn1)
+            btn2 = QPushButton("  复制路径")
+            btn2.setIcon(qta.icon("fa5s.copy", color="#888"))
+            btn2.setStyleSheet(self._small_btn_style())
+            btn2.clicked.connect(_copy_path)
+            row.addWidget(btn2)
+            cl.addLayout(row)
+        elif not success:
+            err_lbl = QLabel(error)
+            err_lbl.setStyleSheet(f"font-size: 11px; color: {self.CLR_RED}; background: transparent;")
+            err_lbl.setWordWrap(True)
+            cl.addWidget(err_lbl)
+
+        self._upload_results_layout.addWidget(card)
 
     def eventFilter(self, obj, event):
         """拦截日志框的键盘事件，发送到 shell。"""
@@ -1850,38 +1927,32 @@ class MainWindow(QMainWindow):
             self._build_log.setTextCursor(cursor)
         elif result.startswith("__STATUS__"):
             self._completion_label.setText(result[10:])
-        elif result.startswith("__ZIP__"):
-            path = result[7:]
-            if path == "NOT_FOUND":
-                self._upload_error_lbl.setText("❌ 未找到 zip 文件")
-                self._upload_error_lbl.setVisible(True)
-                self._upload_result_widget.setVisible(False)
-            elif path.startswith("ERROR:"):
-                self._upload_error_lbl.setText(f"❌ 查找失败: {path[6:]}")
-                self._upload_error_lbl.setVisible(True)
-                self._upload_result_widget.setVisible(False)
-            else:
-                self._upload_zip_input.setText(path)
-                self._upload_error_lbl.setVisible(False)
-                self._upload_name_lbl.setText(f"✓ 找到: {path.rsplit('/', 1)[-1]}")
-                self._upload_link_lbl.setText("")
-                self._upload_status_lbl.setText("")
-                self._upload_result_widget.setVisible(True)
-        elif result.startswith("__UPLOAD__"):
-            parts = result[10:].split("|", 4)
+        elif result.startswith("__UPLOAD_PROGRESS__"):
+            parts = result[19:].split("|", 1)
+            idx, total = int(parts[0]) + 1, int(parts[1])
+            self._upload_progress_lbl.setText(f"正在上传 {idx}/{total}…")
+        elif result.startswith("__UPLOAD_ITEM__"):
+            parts = result[15:].split("|", 4)
             ok, filename, link, size, error = (parts + [""] * 5)[:5]
-            self._upload_btn.setEnabled(True)
-            self._upload_btn.setText("  上传到网盘")
-            if ok == "OK":
-                self._upload_error_lbl.setVisible(False)
-                self._upload_name_lbl.setText(f"软件名称: {filename}  ({size})")
-                self._upload_link_lbl.setText(link if link else "（未生成链接）")
-                self._upload_status_lbl.setText("")
-                self._upload_result_widget.setVisible(True)
+            self._upload_results.append({
+                "success": ok == "OK", "filename": filename,
+                "link": link, "size": size, "error": error
+            })
+            self._upload_progress_bar.setValue(len(self._upload_results))
+            self._add_upload_result_card(len(self._upload_results) - 1,
+                                         ok == "OK", filename, link, size, error)
+            self._upload_results_container.setVisible(True)
+        elif result.startswith("__UPLOAD_DONE__"):
+            total = int(result[15:])
+            ok_count = sum(1 for r in self._upload_results if r["success"])
+            fail_count = total - ok_count
+            if fail_count:
+                self._upload_progress_lbl.setText(f"上传完成: {ok_count} 成功, {fail_count} 失败")
             else:
-                self._upload_error_lbl.setText(f"❌ 上传失败: {error}")
-                self._upload_error_lbl.setVisible(True)
-                self._upload_result_widget.setVisible(False)
+                self._upload_progress_lbl.setText(f"✓ 全部上传成功 ({total} 个)")
+            self._upload_btn.setEnabled(True)
+            self._upload_btn.setText("  全部上传")
+            self._upload_progress_bar.setVisible(False)
 
     def _on_terminal_tab(self) -> None:
         """终端区 Tab 补全（后台线程执行，避免阻塞 UI）。"""
@@ -2164,7 +2235,20 @@ class MainWindow(QMainWindow):
         from executor.build_queue import QueueItemStatus
         if hasattr(self, "_current_build_queue_id") and self._current_build_queue_id:
             queue_status = QueueItemStatus.SUCCEEDED if status == "succeeded" else QueueItemStatus.FAILED
-            self._build_queue.update_status(self._current_build_queue_id, queue_status, exit_code=exit_code)
+            # 编译成功时查找 zip 路径
+            build_output = ""
+            if status == "succeeded":
+                item = self._build_queue.get_by_id(self._current_build_queue_id)
+                if item:
+                    project_path = item.project_path
+                    marker = "/code/cultraview/cusConfig"
+                    code_dir = project_path.split(marker, 1)[0] + "/code" if marker in project_path else project_path
+                    try:
+                        build_output = self._upload_service.find_latest_zip(code_dir) or ""
+                    except Exception:
+                        pass
+            self._build_queue.update_status(self._current_build_queue_id, queue_status,
+                                            exit_code=exit_code, build_output=build_output)
             self._logger.info("队列状态已更新: %s -> %s", self._current_build_queue_id, queue_status.value)
             self._current_build_queue_id = None
 
@@ -2744,6 +2828,18 @@ class MainWindow(QMainWindow):
         if not pending:
             return
         self._start_queue_build(pending[0].id, auto_chain=True)
+
+    def _on_queue_upload(self, queue_id: str) -> None:
+        """编译成功卡片「上传到网盘」：用缓存的 zip 路径加入上传队列，跳转上传页。"""
+        item = self._build_queue.get_by_id(queue_id)
+        if not item:
+            return
+        if item.build_output:
+            self._on_add_to_queue(item.build_output)
+            self._stack.setCurrentIndex(7)  # 跳转到网盘上传页面
+        else:
+            self._upload_error_lbl.setText("❌ 未找到编译产物路径")
+            self._upload_error_lbl.setVisible(True)
 
     def _start_queue_build(self, queue_id: str, auto_chain: bool = False) -> None:
         try:

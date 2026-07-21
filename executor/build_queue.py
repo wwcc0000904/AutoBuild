@@ -34,6 +34,7 @@ class QueueItem:
     build_log: str = ""
     exit_code: Optional[int] = None
     task_id: str = ""
+    build_output: str = ""  # 编译产物 zip 路径
 
 
 class BuildQueue:
@@ -128,9 +129,10 @@ class BuildQueue:
                 return item
         return None
 
-    def update_status(self, item_id: str, status, 
-                      task_id: str = "", build_log: str = "", 
-                      exit_code: Optional[int] = None) -> bool:
+    def update_status(self, item_id: str, status,
+                      task_id: str = "", build_log: str = "",
+                      exit_code: Optional[int] = None,
+                      build_output: str = "") -> bool:
         item = self.get_by_id(item_id)
         if not item:
             return False
@@ -145,6 +147,8 @@ class BuildQueue:
             item.build_log = build_log
         if exit_code is not None:
             item.exit_code = exit_code
+        if build_output:
+            item.build_output = build_output
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if status == QueueItemStatus.PENDING:
             # 重试时清除之前的编译信息

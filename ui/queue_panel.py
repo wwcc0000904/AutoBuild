@@ -31,6 +31,7 @@ class QueueCard(QFrame):
     build_all_requested = Signal()
     retry_requested = Signal(str)
     remove_requested = Signal(str)
+    upload_requested = Signal(str)
 
     def __init__(self, item: QueueItem, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -133,6 +134,16 @@ class QueueCard(QFrame):
             )
             retry_btn.clicked.connect(lambda: self.retry_requested.emit(qid))
             right.addWidget(retry_btn)
+        elif item.status == QueueItemStatus.SUCCEEDED:
+            upload_btn = QPushButton("上传到网盘")
+            upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            upload_btn.setStyleSheet(
+                "QPushButton { background:#00b894; color:white; border:none;"
+                " padding:6px 16px; font-size:12px; border-radius:6px; min-width:90px; }"
+                "QPushButton:hover { background:#00a381; }"
+            )
+            upload_btn.clicked.connect(lambda: self.upload_requested.emit(qid))
+            right.addWidget(upload_btn)
 
         if item.status != QueueItemStatus.BUILDING:
             remove_btn = QPushButton("移除")
@@ -240,6 +251,7 @@ class QueuePanel(QWidget):
     build_requested = Signal(str)
     build_all_requested = Signal()
     retry_requested = Signal(str)
+    upload_requested = Signal(str)
 
     def __init__(self, build_queue: BuildQueue, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -310,6 +322,7 @@ class QueuePanel(QWidget):
             card.build_requested.connect(self.build_requested.emit)
             card.retry_requested.connect(self._on_retry)
             card.remove_requested.connect(self._on_remove)
+            card.upload_requested.connect(self.upload_requested.emit)
         self._suppress_order = False
 
         pending = len([i for i in items if i.status == QueueItemStatus.PENDING])
