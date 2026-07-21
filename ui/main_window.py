@@ -1536,7 +1536,7 @@ class MainWindow(QMainWindow):
             try:
                 # 一条命令列出所有条目及类型（d=目录，-=文件）
                 stdin, stdout, stderr = self._ssh_client.exec_command(
-                    f'ls -1F --color=never {shlex.quote(path)} 2>/dev/null', timeout=10)
+                    f'ls -1tF --color=never {shlex.quote(path)} 2>/dev/null', timeout=10)
                 entries = stdout.read().decode().strip().split('\n')
                 # 加上级目录
                 if path != "/":
@@ -1546,7 +1546,7 @@ class MainWindow(QMainWindow):
                     file_list.addItem(item)
                 dirs = []
                 files = []
-                for name in sorted(entries):
+                for name in entries:
                     if not name or name.startswith('.'):
                         continue
                     # ls -F 会在目录后加 /，可执行文件加 *，链接加 @
