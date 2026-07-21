@@ -1349,7 +1349,7 @@ class MainWindow(QMainWindow):
         self._upload_link_lbl.setWordWrap(True)
         self._upload_link_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         link_row.addWidget(self._upload_link_lbl, 1)
-        copy_link_btn = QPushButton("  复制链接")
+        copy_link_btn = QPushButton("  复制软件链接")
         copy_link_btn.setIcon(qta.icon("fa5s.copy", color="#888"))
         copy_link_btn.setStyleSheet(self._small_btn_style())
         copy_link_btn.clicked.connect(self._on_copy_upload_link)
