@@ -250,12 +250,12 @@ class MainWindow(QMainWindow):
             ("  手动模式", 1),
             ("  审核面板", 2),
             ("  执行结果", 3),
-            ("  编译构建", 4),
-            ("  编译队列", 5),
+            ("  编译队列", 4),
+            ("  编译构建", 5),
             ("  规则管理", 6),
             ("  网盘上传", 7),
         ]
-        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs", "fa5s.cloud-upload-alt"]
+        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt"]
         for (text, idx), icon_name in zip(nav_items, nav_icons):
             btn = QPushButton(text)
             btn.setIcon(qta.icon(icon_name, color="#888888"))
@@ -403,16 +403,16 @@ class MainWindow(QMainWindow):
         self._result_page = self._build_result_page()
         self._stack.addWidget(_scroll_wrap(self._result_page))
 
-        # 页面4: 编译构建（终端区不需要外层滚动）
-        self._build_page = self._build_build_page()
-        self._stack.addWidget(self._build_page)
-
-        # 页面5: 编译队列（已有内部滚动）
+        # 页面4: 编译队列（已有内部滚动）
         self._queue_page = QueuePanel(self._build_queue)
         self._queue_page.build_requested.connect(self._on_queue_build_requested)
         self._queue_page.build_all_requested.connect(self._on_build_all)
         self._queue_page.upload_requested.connect(self._on_queue_upload)
         self._stack.addWidget(self._queue_page)
+
+        # 页面5: 编译构建（终端区不需要外层滚动）
+        self._build_page = self._build_build_page()
+        self._stack.addWidget(self._build_page)
 
         # 页面6: 规则管理（已有内部滚动）
         self._rule_page = RulePanel()
@@ -1730,6 +1730,36 @@ class MainWindow(QMainWindow):
 
         self._upload_results_layout.addWidget(card)
 
+    def _shell_send(self, data: str) -> None:
+        """安全发送数据到 shell channel，SSH 断连时静默处理。"""
+        try:
+            if self._shell_channel and self._shell_running:
+                self._shell_send(data)
+        except Exception:
+            self._shell_running = False
+
+    def closeEvent(self, event) -> None:
+        """窗口关闭时清理后台线程和 SSH 通道。"""
+        # 停止 shell reader 线程
+        self._shell_running = False
+        try:
+            if self._shell_channel:
+                self._shell_channel.close()
+        except Exception:
+            pass
+        self._shell_channel = None
+        # 等待手动模式 worker 线程
+        worker = getattr(self, "_manual_worker", None)
+        if worker and worker.isRunning():
+            worker.wait(3000)
+        # 关闭 SSH 连接
+        try:
+            if hasattr(self, "_ssh_client") and self._ssh_client:
+                self._ssh_client.close()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def eventFilter(self, obj, event):
         """拦截日志框的键盘事件，发送到 shell。"""
         from PySide6.QtCore import QEvent, Qt
@@ -1741,31 +1771,31 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import Qt as _Qt
             if event.key() == _Qt.Key_C and event.modifiers() & _Qt.ControlModifier:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x03")
+                    self._shell_send("\x03")
                 return True
 
             # 方向键 → 命令历史
             if event.key() == _Qt.Key_Up:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x1b[A")
+                    self._shell_send("\x1b[A")
                 return True
             if event.key() == _Qt.Key_Down:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x1b[B")
+                    self._shell_send("\x1b[B")
                 return True
             if event.key() == _Qt.Key_Right:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x1b[C")
+                    self._shell_send("\x1b[C")
                 return True
             if event.key() == _Qt.Key_Left:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x1b[D")
+                    self._shell_send("\x1b[D")
                 return True
 
             # Escape → 发送 ESC
             if event.key() == _Qt.Key_Escape:
                 if self._shell_channel and self._shell_running:
-                    self._shell_channel.send("\x1b")
+                    self._shell_send("\x1b")
                 return True
 
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
@@ -1779,10 +1809,10 @@ class MainWindow(QMainWindow):
                     m = _re.match(r'^[^@]+@[^:]+:[^$#]*[$#]\s*(.*)', cmd)
                     if m and m.group(1).strip():
                         # 有明确命令，发送命令+回车
-                        self._shell_channel.send(m.group(1).rstrip() + "\n")
+                        self._shell_send(m.group(1).rstrip() + "\n")
                     else:
                         # 没有明确命令（如纯提示符行），发送纯回车
-                        self._shell_channel.send("\n")
+                        self._shell_send("\n")
                 return True
             # 阻止在历史区域编辑
             cursor = self._build_log.textCursor()
@@ -1903,14 +1933,14 @@ class MainWindow(QMainWindow):
                 self._current_build_queue_id = None
         # 有 shell 会话 → 发送 Ctrl+C
         elif self._shell_channel and self._shell_running:
-            self._shell_channel.send("\x03")
+            self._shell_send("\x03")
         else:
             self._build_log.append("[编译] 当前没有可取消的任务")
 
     def _exec_quick_cmd(self, cmd: str) -> None:
         """快捷按钮执行命令。"""
         if self._shell_channel and self._shell_running:
-            self._shell_channel.send(cmd + "\n")
+            self._shell_send(cmd + "\n")
         else:
             self._build_log.append("[错误] shell 会话未建立")
 
@@ -1925,6 +1955,9 @@ class MainWindow(QMainWindow):
             self._shell_input_pos = self._build_log.document().characterCount() - len(new_cmd)
             cursor.movePosition(cursor.MoveOperation.End)
             self._build_log.setTextCursor(cursor)
+        elif result.startswith("__BUILD_TAB__"):
+            new_text = result[13:]
+            self._build_input.setText(new_text)
         elif result.startswith("__STATUS__"):
             self._completion_label.setText(result[10:])
         elif result.startswith("__UPLOAD_PROGRESS__"):
@@ -2005,7 +2038,7 @@ class MainWindow(QMainWindow):
                 candidates = [line.strip() for line in stdout.readlines() if line.strip()]
 
                 if not candidates:
-                    self._completion_label.setText(f"无匹配: {last_word}")
+                    self._log_emitter.completion_result.emit(f"__STATUS__无匹配: {last_word}")
                     return
 
                 if len(candidates) == 1:
@@ -2019,13 +2052,13 @@ class MainWindow(QMainWindow):
                         if kind == "DIR" and not completed.endswith("/"):
                             completed += "/"
                     new_cmd = " ".join(prefix_words + [completed]) if prefix_words else completed
-                    self._completion_label.setText(f"✓ {completed}")
+                    self._log_emitter.completion_result.emit(f"__STATUS__✓ {completed}")
                 else:
                     common = os.path.commonprefix(candidates)
                     display = "  ".join(candidates[:8])
                     if len(candidates) > 8:
                         display += f"  ... 共{len(candidates)}个"
-                    self._completion_label.setText(f"候选 ({len(candidates)}): {display}")
+                    self._log_emitter.completion_result.emit(f"__STATUS__候选 ({len(candidates)}): {display}")
                     if common and common != last_word:
                         new_cmd = " ".join(prefix_words + [common]) if prefix_words else common
                     else:
@@ -2035,15 +2068,16 @@ class MainWindow(QMainWindow):
                 self._log_emitter.log_received.emit(f"__TAB__{new_cmd}")
 
             except Exception as e:
-                self._completion_label.setText(f"[错误] {e}")
+                self._log_emitter.completion_result.emit(f"__STATUS__[错误] {e}")
 
         threading.Thread(target=_do_complete, daemon=True).start()
 
     def _do_remote_completion(self, text: str) -> None:
-        """使用 SSH exec_command 查询补全候选，更新输入框（不影响持久化 shell 状态）。"""
-        import shlex
-        import os
+        """使用 SSH exec_command 查询补全候选，更新输入框（后台线程执行）。"""
+        import shlex, os, threading
 
+        if not (hasattr(self, '_ssh_client') and self._ssh_client):
+            return
 
         parts = text.rstrip().split()
         if not parts:
@@ -2053,71 +2087,56 @@ class MainWindow(QMainWindow):
         prefix_words = parts[:-1]
         is_cd = prefix_words and prefix_words[0] == "cd"
         has_slash = "/" in last_word
-
-        # 使用 _base_path 作为 cwd（_get_shell_cwd 解析 pyte 不可靠）
         cwd = self._base_path or "/home/user"
 
-        try:
-            # 构建 SSH 补全命令
-            if is_cd:
-                # cd 命令 → 目录补全（compgen -d）
-                if has_slash:
-                    ssh_cmd = f"compgen -d -- {shlex.quote(last_word)} 2>/dev/null | head -20"
+        def _do():
+            try:
+                if is_cd:
+                    ssh_cmd = f"compgen -d -- {shlex.quote(last_word)} 2>/dev/null | head -20" if has_slash else                               f"cd {shlex.quote(cwd)} && compgen -d -- {shlex.quote(last_word)} 2>/dev/null | head -20"
                 else:
-                    ssh_cmd = f"cd {shlex.quote(cwd)} && compgen -d -- {shlex.quote(last_word)} 2>/dev/null | head -20"
-            else:
-                # 其他命令 → 文件 + 命令混合补全
-                if has_slash:
-                    ssh_cmd = f"compgen -f -- {shlex.quote(last_word)} 2>/dev/null | head -20"
+                    if has_slash:
+                        ssh_cmd = f"compgen -f -- {shlex.quote(last_word)} 2>/dev/null | head -20"
+                    else:
+                        ssh_cmd = (
+                            f"cd {shlex.quote(cwd)} && "
+                            f"(compgen -f -- {shlex.quote(last_word)} 2>/dev/null | head -10; "
+                            f"compgen -ac -- {shlex.quote(last_word)} 2>/dev/null | head -10) | sort -u | head -20"
+                        )
+
+                _, stdout, _ = self._ssh_client.exec_command(ssh_cmd, timeout=5)
+                candidates = [line.strip() for line in stdout.readlines() if line.strip()]
+
+                if not candidates:
+                    self._log_emitter.completion_result.emit(f"__STATUS__无匹配: {last_word}")
+                    return
+
+                if len(candidates) == 1:
+                    completed = candidates[0]
+                    if is_cd or has_slash:
+                        check_path = completed if completed.startswith("/") else f"{cwd}/{completed}"
+                        _, st_out, _ = self._ssh_client.exec_command(
+                            f"test -d {shlex.quote(check_path)} && echo DIR || echo NOTDIR", timeout=3
+                        )
+                        kind = st_out.read().decode().strip()
+                        if kind == "DIR" and not completed.endswith("/"):
+                            completed += "/"
+                    new_text = " ".join(prefix_words + [completed]) if prefix_words else completed
+                    self._log_emitter.completion_result.emit(f"__BUILD_TAB__{new_text}")
+                    self._log_emitter.completion_result.emit(f"__STATUS__✓ {completed}")
                 else:
-                    ssh_cmd = (
-                        f"cd {shlex.quote(cwd)} && "
-                        f"(compgen -f -- {shlex.quote(last_word)} 2>/dev/null | head -10; "
-                        f"compgen -ac -- {shlex.quote(last_word)} 2>/dev/null | head -10) | sort -u | head -20"
-                    )
+                    common = os.path.commonprefix(candidates)
+                    display = "  ".join(candidates[:8])
+                    if len(candidates) > 8:
+                        display += f"  ... 共{len(candidates)}个"
+                    self._log_emitter.completion_result.emit(f"__STATUS__候选 ({len(candidates)}): {display}")
+                    if common and common != last_word:
+                        new_text = " ".join(prefix_words + [common]) if prefix_words else common
+                        self._log_emitter.completion_result.emit(f"__BUILD_TAB__{new_text}")
 
+            except Exception as e:
+                self._log_emitter.completion_result.emit(f"__STATUS__[错误] {e}")
 
-            _, stdout, _ = self._ssh_client.exec_command(ssh_cmd, timeout=5)
-            candidates = [line.strip() for line in stdout.readlines() if line.strip()]
-
-
-            if not candidates:
-                self._completion_label.setText(f"无匹配: {last_word}")
-                return
-
-            # 处理补全结果
-            if len(candidates) == 1:
-                completed = candidates[0]
-                # cd 命令或路径 → 检查是否是目录，加 /
-                if is_cd or has_slash:
-                    check_path = completed if completed.startswith("/") else f"{cwd}/{completed}"
-                    _, st_out, _ = self._ssh_client.exec_command(
-                        f"test -d {shlex.quote(check_path)} && echo DIR || echo NOTDIR", timeout=3
-                    )
-                    kind = st_out.read().decode().strip()
-                    if kind == "DIR" and not completed.endswith("/"):
-                        completed += "/"
-
-                new_text = " ".join(prefix_words + [completed]) if prefix_words else completed
-                self._build_input.setText(new_text)
-                self._completion_label.setText(f"✓ {completed}")
-
-            elif len(candidates) > 1:
-                common = os.path.commonprefix(candidates)
-                # 显示候选列表
-                display = "  ".join(candidates[:8])
-                if len(candidates) > 8:
-                    display += f"  ... 共{len(candidates)}个"
-                self._completion_label.setText(f"候选 ({len(candidates)}): {display}")
-
-                if common and common != last_word:
-                    new_text = " ".join(prefix_words + [common]) if prefix_words else common
-                    self._build_input.setText(new_text)
-                else:
-                    pass
-
-        except Exception as e:
-            self._completion_label.setText(f"[错误] {e}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _on_build_input_send(self) -> None:
         cmd = self._build_input.text().strip()
@@ -2144,7 +2163,7 @@ class MainWindow(QMainWindow):
 
         # 没有编译 → 通过持久化 shell 执行
         if self._shell_channel and self._shell_running:
-            self._shell_channel.send(cmd + "\n")
+            self._shell_send(cmd + "\n")
         else:
             self._build_log.append("[错误] shell 会话未建立")
 

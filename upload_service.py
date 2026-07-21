@@ -74,12 +74,9 @@ class UploadService:
         filename = local_path.rsplit("/", 1)[-1] if "/" in local_path else local_path
 
         # 检查文件是否存在
-        exit_code, _, _ = self._exec(f"test -f {shlex.quote(local_path)} && echo YES || echo NO", timeout=10)
-        if "YES" not in str(exit_code):
-            # 用 stdout 检查
-            _, out, _ = self._exec(f"test -f {shlex.quote(local_path)} && echo YES || echo NO", timeout=10)
-            if "YES" not in out:
-                return UploadResult(success=False, filename=filename, error=f"文件不存在: {local_path}")
+        _, out, _ = self._exec(f"test -f {shlex.quote(local_path)} && echo YES || echo NO", timeout=10)
+        if "YES" not in out:
+            return UploadResult(success=False, filename=filename, error=f"文件不存在: {local_path}")
 
         # 获取文件大小
         _, size_out, _ = self._exec(

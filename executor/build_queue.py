@@ -157,6 +157,7 @@ class BuildQueue:
             item.task_id = ""
             item.build_log = ""
             item.exit_code = None
+            item.build_output = ""
         elif status == QueueItemStatus.BUILDING and not item.started_at:
             item.started_at = now
         elif status in (QueueItemStatus.SUCCEEDED, QueueItemStatus.FAILED, QueueItemStatus.CANCELLED):
@@ -198,24 +199,6 @@ class BuildQueue:
         self._notify_change()
         return before - len(self._items)
 
-    def move_up(self, item_id: str) -> bool:
-        for i, item in enumerate(self._items):
-            if item.id == item_id and i > 0:
-                self._items[i], self._items[i-1] = self._items[i-1], self._items[i]
-                self._save()
-                self._notify_change()
-                return True
-        return False
-
-    def move_down(self, item_id: str) -> bool:
-        for i, item in enumerate(self._items):
-            if item.id == item_id and i < len(self._items) - 1:
-                self._items[i], self._items[i+1] = self._items[i+1], self._items[i]
-                self._save()
-                self._notify_change()
-                return True
-        return False
-
     def _save(self) -> None:
         try:
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,28 +207,38 @@ class BuildQueue:
                 d = asdict(item)
                 d["status"] = item.status.value
                 data.append(d)
-            self._persist_path.write_text(
+            # 原子写入：先写临时文件，再 rename，防止崩溃导致数据丢失
+            tmp = self._persist_path.with_suffix(".tmp")
+            tmp.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
+            tmp.replace(self._persist_path)
         except Exception as e:
             self._logger.error("保存编译队列失败: %s", e)
 
     def _load(self) -> None:
         try:
-            if self._persist_path.exists():
-                data = json.loads(self._persist_path.read_text(encoding="utf-8"))
-                self._items = []
-                for d in data:
+            if not self._persist_path.exists():
+                return
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            self._items = []
+            for d in data:
+                try:
                     d["status"] = QueueItemStatus(d["status"])
                     self._items.append(QueueItem(**d))
-                # 重置卡在 building 状态的项
-                for item in self._items:
-                    if item.status == QueueItemStatus.BUILDING:
-                        item.status = QueueItemStatus.PENDING
-                        item.task_id = ""
-                        self._logger.warning("重置队列项状态: %s -> pending", item.customer_name)
+                except Exception as e:
+                    self._logger.warning("跳过损坏的队列项: %s", e)
+            # 重置卡在 building 状态的项
+            dirty = False
+            for item in self._items:
+                if item.status == QueueItemStatus.BUILDING:
+                    item.status = QueueItemStatus.PENDING
+                    item.task_id = ""
+                    dirty = True
+                    self._logger.warning("重置队列项状态: %s -> pending", item.customer_name)
+            if dirty:
                 self._save()
-                self._logger.info("已加载编译队列: %d 项", len(self._items))
+            self._logger.info("已加载编译队列: %d 项", len(self._items))
         except Exception as e:
             self._logger.error("加载编译队列失败: %s", e)
             self._items = []
