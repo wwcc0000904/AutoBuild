@@ -1456,6 +1456,7 @@ class MainWindow(QMainWindow):
 
     def _on_browse_server(self):
         """打开远程文件浏览器对话框。"""
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout, QLabel, QScrollArea
         import shlex
         dlg = QDialog(self)
