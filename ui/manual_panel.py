@@ -361,11 +361,15 @@ class ManualPanel(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(6)
+        root.setSpacing(0)
+
+        # ── 上半部分：导航 + 页面（可伸缩）──
+        top = QWidget(); top.setStyleSheet("background:transparent;")
+        top_lay = QVBoxLayout(top); top_lay.setContentsMargins(0,0,0,0); top_lay.setSpacing(6)
 
         # 页码导航
         nav = QWidget(); nav.setStyleSheet("background:transparent;")
-        nav_lay = QHBoxLayout(nav); nav_lay.setContentsMargins(0,4,0,4); nav_lay.setSpacing(6)
+        nav_lay = QHBoxLayout(nav); nav_lay.setContentsMargins(0, 4, 0, 4); nav_lay.setSpacing(6)
 
         self._page_defs = [
             ("build_config.txt", "功能开关 + 参数"),
@@ -386,7 +390,7 @@ class ManualPanel(QWidget):
             nav_lay.addWidget(btn)
             self._nav_btns.append(btn)
         nav_lay.addStretch()
-        root.addWidget(nav)
+        top_lay.addWidget(nav)
 
         # 页面堆叠
         self._stack = QStackedWidget()
@@ -398,9 +402,14 @@ class ManualPanel(QWidget):
         self._build_page_ctv_setting()
         self._build_page_whitelist()
         self._build_page_preinstall()
-        root.addWidget(self._stack, 1)
+        top_lay.addWidget(self._stack, 1)
 
-        # 底部按钮
+        root.addWidget(top, 1)
+
+        # ── 下半部分：按钮 + 预览（固定高度，始终可见）──
+        bottom = QWidget(); bottom.setStyleSheet(f"background: {_C['bg']}; border-top: 1px solid {_C['border']};")
+        bot_lay = QVBoxLayout(bottom); bot_lay.setContentsMargins(12, 8, 12, 8); bot_lay.setSpacing(6)
+
         btn_row = QHBoxLayout(); btn_row.setSpacing(10); btn_row.addStretch()
 
         preview_btn = QPushButton("  预览")
@@ -418,16 +427,18 @@ class ManualPanel(QWidget):
             "QPushButton:hover{background:#d5d5d5;}")
         exec_btn.clicked.connect(self._on_execute)
         btn_row.addWidget(exec_btn)
-        root.addLayout(btn_row)
+        bot_lay.addLayout(btn_row)
 
         # 预览区
         self._preview_edit = QTextEdit()
-        self._preview_edit.setReadOnly(True); self._preview_edit.setMaximumHeight(90)
+        self._preview_edit.setReadOnly(True); self._preview_edit.setMaximumHeight(70)
         self._preview_edit.setPlaceholderText("点击「预览」查看将要执行的修改…")
         self._preview_edit.setStyleSheet(
             f"QTextEdit{{background:transparent;color:{_C['text']};border:1px solid {_C['input_border']};"
-            f"border-radius:8px;padding:8px;font-family:Menlo,Consolas,monospace;font-size:12px;}}")
-        root.addWidget(self._preview_edit)
+            f"border-radius:8px;padding:6px;font-family:Menlo,Consolas,monospace;font-size:12px;}}")
+        bot_lay.addWidget(self._preview_edit)
+
+        root.addWidget(bottom)
 
         self._nav_btns[0].setStyleSheet(self._nav_style(True))
 
