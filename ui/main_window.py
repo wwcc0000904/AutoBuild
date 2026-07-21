@@ -251,8 +251,9 @@ class MainWindow(QMainWindow):
             ("  编译构建", 4),
             ("  编译队列", 5),
             ("  规则管理", 6),
+            ("  网盘上传", 7),
         ]
-        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs"]
+        nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs", "fa5s.cloud-upload-alt"]
         for (text, idx), icon_name in zip(nav_items, nav_icons):
             btn = QPushButton(text)
             btn.setIcon(qta.icon(icon_name, color="#888888"))
@@ -414,6 +415,10 @@ class MainWindow(QMainWindow):
         self._rule_page = RulePanel()
         self._stack.addWidget(self._rule_page)
 
+        # 页面7: 网盘上传
+        self._upload_page = self._build_upload_page()
+        self._stack.addWidget(_scroll_wrap(self._upload_page))
+
         self._stack.setCurrentIndex(0)
         content_layout.addWidget(self._stack, 1)
 
@@ -452,7 +457,7 @@ class MainWindow(QMainWindow):
         )
 
     def _update_nav_icons(self, active_idx: int):
-        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs"]
+        nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.hammer", "fa5s.list", "fa5s.cogs", "fa5s.cloud-upload-alt"]
         for i, btn in enumerate(self._nav_btns):
             color = "#1a1a1a" if i == active_idx else "#888888"
             btn.setIcon(qta.icon(nav_icon_names[i], color=color))
@@ -974,7 +979,7 @@ class MainWindow(QMainWindow):
     def _switch_mode(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
         # 规则管理和编译队列页面隐藏目录设置
-        self._dir_card.setVisible(index not in (4, 5, 6))
+        self._dir_card.setVisible(index not in (4, 5, 6, 7))
         for i, btn in enumerate(self._nav_btns):
             btn.setStyleSheet(self._nav_btn_style(i == index))
         self._update_nav_icons(index)
@@ -1239,58 +1244,6 @@ class MainWindow(QMainWindow):
         tmux_row.addStretch()
         build_layout.addLayout(tmux_row)
 
-        # ── 网盘上传 ──
-        from PySide6.QtWidgets import QFrame as _QFrame
-        sep = _QFrame(); sep.setFrameShape(_QFrame.Shape.HLine); sep.setStyleSheet("color:#e0e0e0;")
-        build_layout.addWidget(sep)
-
-        upload_title = QLabel("  网盘上传")
-        upload_title.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {self.CLR_TEXT}; background: transparent; padding: 4px 0;")
-        build_layout.addWidget(upload_title)
-
-        # 网盘账号
-        wdav_row1 = QHBoxLayout(); wdav_row1.setSpacing(10)
-        wdav_row1.addWidget(QLabel("账号:")); self._wdav_user_input = QLineEdit(); self._wdav_user_input.setStyleSheet(self._input_style())
-        self._wdav_user_input.setPlaceholderText("网盘用户名"); self._wdav_user_input.setText(self._wdav_user)
-        wdav_row1.addWidget(self._wdav_user_input, 1)
-        wdav_row1.addWidget(QLabel("密码:")); self._wdav_pass_input = QLineEdit(); self._wdav_pass_input.setStyleSheet(self._input_style())
-        self._wdav_pass_input.setEchoMode(QLineEdit.EchoMode.Password); self._wdav_pass_input.setPlaceholderText("网盘密码"); self._wdav_pass_input.setText(self._wdav_pass)
-        wdav_row1.addWidget(self._wdav_pass_input, 1)
-        build_layout.addLayout(wdav_row1)
-
-        # 网盘文件夹
-        wdav_row2 = QHBoxLayout(); wdav_row2.setSpacing(10)
-        wdav_row2.addWidget(QLabel("文件夹:")); self._wdav_folder_input = QLineEdit(); self._wdav_folder_input.setStyleSheet(self._input_style())
-        self._wdav_folder_input.setPlaceholderText("如 software/FAE"); self._wdav_folder_input.setText(self._wdav_folder)
-        wdav_row2.addWidget(self._wdav_folder_input, 1)
-        save_wdav_btn = QPushButton("  保存设置")
-        save_wdav_btn.setStyleSheet(self._small_btn_style())
-        save_wdav_btn.clicked.connect(self._save_webdav_settings)
-        wdav_row2.addWidget(save_wdav_btn)
-        build_layout.addLayout(wdav_row2)
-
-        # 上传按钮 + zip 文件路径
-        upload_row = QHBoxLayout(); upload_row.setSpacing(10)
-        self._upload_zip_input = QLineEdit(); self._upload_zip_input.setStyleSheet(self._input_style())
-        self._upload_zip_input.setPlaceholderText("zip 文件路径（留空自动查找编译产物）")
-        upload_row.addWidget(self._upload_zip_input, 1)
-        find_zip_btn = QPushButton("  查找最新 zip")
-        find_zip_btn.setStyleSheet(self._small_btn_style())
-        find_zip_btn.clicked.connect(self._on_find_zip)
-        upload_row.addWidget(find_zip_btn)
-        self._upload_btn = QPushButton("  上传到网盘")
-        self._upload_btn.setIcon(qta.icon("fa5s.cloud-upload-alt", color="#1a1a1a"))
-        self._upload_btn.setStyleSheet(self._accent_btn_style())
-        self._upload_btn.clicked.connect(self._on_upload)
-        upload_row.addWidget(self._upload_btn)
-        build_layout.addLayout(upload_row)
-
-        # 上传结果
-        self._upload_result_label = QLabel("")
-        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
-        self._upload_result_label.setWordWrap(True)
-        build_layout.addWidget(self._upload_result_label)
-
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         back_btn = QPushButton("← 返回执行结果")
@@ -1300,6 +1253,86 @@ class MainWindow(QMainWindow):
         build_layout.addLayout(btn_row)
 
         layout.addWidget(build_card, 1)
+        return page
+
+    def _build_upload_page(self) -> QWidget:
+        """网盘上传页面。"""
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        # 网盘设置卡片
+        settings_card = self._make_card("网盘设置")
+        sl = settings_card.layout()
+
+        # 账号
+        r1 = QHBoxLayout(); r1.setSpacing(10)
+        r1.addWidget(QLabel("账号:"))
+        self._wdav_user_input = QLineEdit()
+        self._wdav_user_input.setStyleSheet(self._input_style())
+        self._wdav_user_input.setPlaceholderText("网盘用户名")
+        self._wdav_user_input.setText(self._wdav_user)
+        r1.addWidget(self._wdav_user_input, 1)
+        r1.addWidget(QLabel("密码:"))
+        self._wdav_pass_input = QLineEdit()
+        self._wdav_pass_input.setStyleSheet(self._input_style())
+        self._wdav_pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._wdav_pass_input.setPlaceholderText("网盘密码")
+        self._wdav_pass_input.setText(self._wdav_pass)
+        r1.addWidget(self._wdav_pass_input, 1)
+        sl.addLayout(r1)
+
+        # 文件夹
+        r2 = QHBoxLayout(); r2.setSpacing(10)
+        r2.addWidget(QLabel("文件夹:"))
+        self._wdav_folder_input = QLineEdit()
+        self._wdav_folder_input.setStyleSheet(self._input_style())
+        self._wdav_folder_input.setPlaceholderText("如 software/FAE")
+        self._wdav_folder_input.setText(self._wdav_folder)
+        r2.addWidget(self._wdav_folder_input, 1)
+        save_btn = QPushButton("  保存设置")
+        save_btn.setStyleSheet(self._small_btn_style())
+        save_btn.clicked.connect(self._save_webdav_settings)
+        r2.addWidget(save_btn)
+        sl.addLayout(r2)
+        layout.addWidget(settings_card)
+
+        # 上传操作卡片
+        upload_card = self._make_card("上传文件")
+        ul = upload_card.layout()
+
+        # zip 文件路径
+        r3 = QHBoxLayout(); r3.setSpacing(10)
+        r3.addWidget(QLabel("文件路径:"))
+        self._upload_zip_input = QLineEdit()
+        self._upload_zip_input.setStyleSheet(self._input_style())
+        self._upload_zip_input.setPlaceholderText("远程服务器上的 zip 文件路径（留空自动查找）")
+        r3.addWidget(self._upload_zip_input, 1)
+        find_btn = QPushButton("  查找最新 zip")
+        find_btn.setStyleSheet(self._small_btn_style())
+        find_btn.clicked.connect(self._on_find_zip)
+        r3.addWidget(find_btn)
+        ul.addLayout(r3)
+
+        # 上传按钮
+        r4 = QHBoxLayout(); r4.setSpacing(10); r4.addStretch()
+        self._upload_btn = QPushButton("  上传到网盘")
+        self._upload_btn.setIcon(qta.icon("fa5s.cloud-upload-alt", color="#1a1a1a"))
+        self._upload_btn.setStyleSheet(self._accent_btn_style())
+        self._upload_btn.clicked.connect(self._on_upload)
+        r4.addWidget(self._upload_btn)
+        ul.addLayout(r4)
+
+        # 上传结果
+        self._upload_result_label = QLabel("")
+        self._upload_result_label.setStyleSheet(f"font-size: 12px; color: {self.CLR_GREEN}; background: transparent; padding: 4px;")
+        self._upload_result_label.setWordWrap(True)
+        ul.addWidget(self._upload_result_label)
+
+        layout.addWidget(upload_card)
+        layout.addStretch()
         return page
 
     def _get_build_code_dir(self) -> str:
