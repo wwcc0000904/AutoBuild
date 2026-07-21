@@ -1257,6 +1257,7 @@ class MainWindow(QMainWindow):
 
     def _build_upload_page(self) -> QWidget:
         """网盘上传页面。"""
+        from PySide6.QtCore import Qt
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(page)
@@ -1345,7 +1346,7 @@ class MainWindow(QMainWindow):
 
         link_row = QHBoxLayout(); link_row.setSpacing(8)
         self._upload_link_lbl = QLabel("")
-        self._upload_link_lbl.setStyleSheet(f"font-size: 12px; color: {self.CLR_BLUE}; background: transparent;")
+        self._upload_link_lbl.setStyleSheet(f"font-size: 12px; color: #4a90d9; background: transparent;")
         self._upload_link_lbl.setWordWrap(True)
         self._upload_link_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         link_row.addWidget(self._upload_link_lbl, 1)
