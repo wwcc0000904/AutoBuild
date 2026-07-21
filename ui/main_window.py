@@ -1456,14 +1456,57 @@ class MainWindow(QMainWindow):
 
     def _on_browse_server(self):
         """打开远程文件浏览器对话框。"""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout, QLabel
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout, QLabel, QScrollArea
+        import shlex
         dlg = QDialog(self)
         dlg.setWindowTitle("浏览服务器文件")
-        dlg.setMinimumSize(600, 450)
+        dlg.setMinimumSize(650, 500)
         dlg.setStyleSheet("QDialog { background: #ffffff; }")
 
         lay = QVBoxLayout(dlg)
         lay.setSpacing(8)
+
+        # ── 项目快捷按钮 ──
+        proj_label = QLabel("快速进入项目 out_emmc:")
+        proj_label.setStyleSheet("font-size: 12px; color: #666; background: transparent;")
+        lay.addWidget(proj_label)
+
+        proj_scroll = QScrollArea()
+        proj_scroll.setWidgetResizable(True)
+        proj_scroll.setFixedHeight(44)
+        proj_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        proj_btn_container = QWidget()
+        proj_btn_layout = QHBoxLayout(proj_btn_container)
+        proj_btn_layout.setContentsMargins(0, 0, 0, 0)
+        proj_btn_layout.setSpacing(6)
+
+        # 加载项目列表
+        try:
+            stdin, stdout, stderr = self._ssh_client.exec_command(
+                f'ls -d {self._base_path}/*/', timeout=10)
+            projects = []
+            for d in stdout.read().decode().strip().split('\n'):
+                d = d.strip().rstrip('/')
+                if d:
+                    name = Path(d).name
+                    if not name.startswith('.'):
+                        projects.append(name)
+        except Exception:
+            projects = []
+
+        for proj in sorted(projects):
+            btn = QPushButton(proj)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton { background: #f0f2f5; color: #333; border: 1px solid #ddd;"
+                " border-radius: 6px; padding: 4px 10px; font-size: 11px; }"
+                "QPushButton:hover { background: #e0e4ea; border-color: #bbb; }"
+            )
+            btn.clicked.connect(lambda _, p=proj: _load(f"{self._base_path}/{p}/code/out_emmc"))
+            proj_btn_layout.addWidget(btn)
+        proj_btn_layout.addStretch()
+        proj_scroll.setWidget(proj_btn_container)
+        lay.addWidget(proj_scroll)
 
         # 路径栏
         path_row = QHBoxLayout()
