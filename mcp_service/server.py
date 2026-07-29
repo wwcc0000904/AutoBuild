@@ -1,7 +1,6 @@
 """MCP Server — 给外部 AI Agent 提供调用接口。
 
 启动方式:
-    cd /home/user/Documents/软件输出自动化
     python3 mcp_service/server.py
 """
 from __future__ import annotations
@@ -29,7 +28,7 @@ from review.review_service import ReviewService, ReviewDecision
 
 logger = get_logger()
 
-project_manager = CustomerProjectManager(root=Path("/home/user/Desktop"))
+project_manager = CustomerProjectManager(root=Path.home() / "Desktop")
 review_service = ReviewService()
 build_service = BuildService()
 

@@ -104,7 +104,7 @@ class LoginPanel(QWidget):
         # 工程根目录
         row4 = QHBoxLayout()
         row4.addWidget(QLabel("工程根目录:"))
-        self._base_path_input = QLineEdit("/home/user")
+        self._base_path_input = QLineEdit("")
         self._base_path_input.setPlaceholderText("服务器上客户工程的根目录")
         row4.addWidget(self._base_path_input, 1)
         g_layout.addLayout(row4)

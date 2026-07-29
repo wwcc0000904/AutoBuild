@@ -1,0 +1,19 @@
+[
+  {
+    "id": "example001",
+    "customer_name": "示例客户",
+    "project_path": "/data/user/project/code/cultraview/cusConfig/352/atv/Customer/ORDER_DIR",
+    "modified_files": ["build_config.txt"],
+    "analysis_summary": "示例修改项",
+    "status": "pending",
+    "created_at": "2026-01-01 00:00:00",
+    "started_at": "",
+    "finished_at": "",
+    "build_log": "",
+    "exit_code": null,
+    "task_id": "",
+    "build_output": "",
+    "kind": "build",
+    "command": ""
+  }
+]

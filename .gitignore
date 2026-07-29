@@ -5,3 +5,19 @@ __pycache__/
 logs/
 *.log
 .env
+
+# 敏感配置（运行时生成，含服务器路径和用户数据）
+config/build_queue.json
+
+# 编译产物和二进制
+*.dylib
+*.so
+*.o
+static/set_mac_titlebar
+
+# 文档生成产物
+docs/*.docx
+
+# IDE
+.vscode/
+.idea/

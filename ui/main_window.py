@@ -2972,7 +2972,7 @@ class MainWindow(QMainWindow):
             self._logger.info("从队列开始编译: %s", item.customer_name)
             
             # 检查同一项目（code 目录）是否已在编译
-            # 提取项目名：/home/user/352_AN12_MP3/code/... -> 352_AN12_MP3
+            # 提取项目名：/data/user/project/code/... -> project
             def _extract_proj_name(path):
                 parts = [p for p in path.replace('/', ' ').split() if p]
                 if 'code' in parts:

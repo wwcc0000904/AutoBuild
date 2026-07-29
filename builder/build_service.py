@@ -257,7 +257,7 @@ class BuildService:
                     _code_path = _parts[_cd_idx + 1]
         except Exception:
             pass
-        # /home/user/352_AN12_MP3/code -> 352_AN12_MP3
+        # /data/user/PROJECT/code -> PROJECT
         _proj_name = 'ctvbuild'
         if _code_path:
             _path_parts = [p for p in _code_path.replace('/', ' ').split() if p]
