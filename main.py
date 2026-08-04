@@ -6,7 +6,8 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from builder.build_service import BuildService
-from config.logging_setup import get_logger
+from config.logging_setup import get_logger, install_exception_hooks
+import ai
 from customer_project.project_manager import CustomerProjectManager
 from executor.build_queue import BuildQueue
 from review.review_service import ReviewService
@@ -16,6 +17,8 @@ from ui.main_window import MainWindow
 
 def main() -> int:
     logger = get_logger()
+    install_exception_hooks(logger)
+    ai.init_analyzer_from_config()
     logger.info("程序启动")
 
     # 禁用原生对话框，强制用 Qt 渲染（否则 macOS 深色模式下 QMessageBox 黑底）

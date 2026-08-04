@@ -30,3 +30,28 @@ def get_analyzer() -> RequirementAnalyzer:
 def analyze(requirement_text: str, **context) -> AnalysisResult:
     """统一的入口，下游只调这个函数，不关心底层是谁。"""
     return _analyzer.analyze(requirement_text, **context)
+
+
+def init_analyzer_from_config() -> None:
+    """根据 config/ai_config.py 的配置初始化分析器。
+
+    启动时调用一次：
+    - enabled=False 或缺密钥 -> 用 DummyAnalyzer
+    - enabled=True 且有密钥 -> 用 OpenAIAnalyzer
+    """
+    from config.ai_config import load_ai_config
+
+    cfg = load_ai_config()
+    if not cfg.enabled or not cfg.api_key:
+        set_analyzer(DummyAnalyzer())
+        return
+
+    from pathlib import Path as _Path
+    from .openai_analyzer import OpenAIAnalyzer
+    set_analyzer(OpenAIAnalyzer(
+        skill_path=_Path("ai/skills/requirement_analysis.md"),
+        api_key=cfg.api_key,
+        base_url=cfg.base_url or None,
+        model=cfg.model,
+        timeout=cfg.timeout,
+    ))
