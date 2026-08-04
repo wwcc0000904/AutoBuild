@@ -454,6 +454,7 @@ class BuildService:
             self._current = None
 
         except Exception as e:  # noqa: BLE001
+            self._logger.error("编译失败", exc_info=True)
             if self._current and self._current.task_id == task_id:
                 self._current.set_status("failed")
                 self._current.set_error(str(e))

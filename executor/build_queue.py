@@ -209,7 +209,7 @@ class BuildQueue:
                     self.update_status(item.id, QueueItemStatus.FAILED, 
                                       build_log=item.build_log + "\n[检测] tmux 会话已终止\n")
             except Exception as e:
-                self._logger.error("检查 tmux 会话失败: %s", e)
+                self._logger.error("检查 tmux 会话失败: %s", e, exc_info=True)
 
     def clear_completed(self) -> int:
         before = len(self._items)
@@ -234,7 +234,7 @@ class BuildQueue:
             )
             tmp.replace(self._persist_path)
         except Exception as e:
-            self._logger.error("保存编译队列失败: %s", e)
+            self._logger.error("保存编译队列失败: %s", e, exc_info=True)
 
     def _load(self) -> None:
         try:
@@ -247,7 +247,7 @@ class BuildQueue:
                     d["status"] = QueueItemStatus(d["status"])
                     self._items.append(QueueItem(**d))
                 except Exception as e:
-                    self._logger.warning("跳过损坏的队列项: %s", e)
+                    self._logger.warning("跳过损坏的队列项: %s", e, exc_info=True)
             # 重置卡在 building 状态的项
             dirty = False
             for item in self._items:
@@ -260,5 +260,5 @@ class BuildQueue:
                 self._save()
             self._logger.info("已加载编译队列: %d 项", len(self._items))
         except Exception as e:
-            self._logger.error("加载编译队列失败: %s", e)
+            self._logger.error("加载编译队列失败: %s", e, exc_info=True)
             self._items = []
