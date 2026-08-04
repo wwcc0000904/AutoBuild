@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from customer_project.remote_fs import RemotePath
 
-from PySide6.QtCore import Signal, QObject
+from PySide6.QtCore import Signal, QObject, QThread
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -32,6 +32,27 @@ from ui.review_panel import ReviewPanel
 from ui.manual_panel import ManualPanel
 from ui.queue_panel import QueuePanel
 from ui.rule_panel import RulePanel
+from ui.ai_settings_dialog import AISettingsDialog
+
+
+class AnalyzeWorker(QThread):
+    """后台线程执行需求分析，避免 AI 调用阻塞 UI。"""
+    finished_ok = Signal(object)   # AnalysisResult
+    finished_err = Signal(str)     # 错误消息
+
+    def __init__(self, requirement_text: str, ctx: dict):
+        super().__init__()
+        self._requirement_text = requirement_text
+        self._ctx = ctx
+
+    def run(self):
+        try:
+            result = ai.analyze(self._requirement_text, **self._ctx)
+            self.finished_ok.emit(result)
+        except Exception as e:
+            self._logger = get_logger()
+            self._logger.exception("AI 分析异常")
+            self.finished_err.emit(str(e))
 
 
 class TabLineEdit(QLineEdit):
@@ -266,6 +287,14 @@ class MainWindow(QMainWindow):
             sb_layout.addWidget(btn)
             self._nav_btns.append(btn)
 
+
+        # AI 设置按钮（底部）
+        self._ai_btn = QPushButton("  AI 设置")
+        self._ai_btn.setIcon(qta.icon("fa5s.brain", color="#888888"))
+        self._ai_btn.setCursor(self.cursor())
+        self._ai_btn.setStyleSheet(self._nav_btn_style(False))
+        self._ai_btn.clicked.connect(self._open_ai_settings)
+        sb_layout.addWidget(self._ai_btn)
 
         sb_layout.addStretch()
 
@@ -984,6 +1013,11 @@ class MainWindow(QMainWindow):
         return status
 
     # ========== 模式切换 ==========
+
+    def _open_ai_settings(self) -> None:
+        """打开 AI 分析设置对话框。"""
+        dlg = AISettingsDialog(self)
+        dlg.exec()
 
     def _switch_mode(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
@@ -2333,31 +2367,39 @@ class MainWindow(QMainWindow):
         self.run_button.setEnabled(False)
         self.run_button.setText("分析中…")
 
-        try:
-            # 从目录设置获取上下文信息
-            # customer_dir 用完整路径（供 _check_country_in_list 读取 XML）
-            _dir_name = self._dir_combo.currentText() if hasattr(self, "_dir_combo") else ""
-            _dir_full = self._customer_dir_map.get(_dir_name, _dir_name)
-            ctx = {
-                "project": self._project_combo.currentText() if hasattr(self, "_project_combo") else "",
-                "platform": self._board_combo.currentText() if hasattr(self, "_board_combo") else "",
-                "region": self._region_combo.currentText() if hasattr(self, "_region_combo") else "",
-                "customer": self._customer_combo.currentText() if hasattr(self, "_customer_combo") else "",
-                "customer_dir": _dir_full,
-                "target_dir": self._target_dir_input.text().strip() if hasattr(self, "_target_dir_input") else "",
-                "base_path": self._base_path,
-            }
-            self._current_analysis = ai.analyze(requirement_text, **ctx)
-            self.log_edit.append(f"[自动] 客户: {self._current_analysis.customer}")
-            self.log_edit.append(f"[自动] 平台: {self._current_analysis.platform}")
-            self.log_edit.append(f"[自动] 修改项: {len(self._current_analysis.modifications)} 条")
-            self._logger.info("自动分析完成: %s", requirement_text[:80])
-            self._review_service.request_review(self._current_analysis)
-        except Exception as e:
-            self.log_edit.append(f"[错误] 自动分析异常: {e}")
-            self._logger.exception("自动分析异常")
-            self.run_button.setEnabled(True)
-            self.run_button.setText("  自动分析并提交审核")
+        # 从目录设置获取上下文信息
+        # customer_dir 用完整路径（供 _check_country_in_list 读取 XML）
+        _dir_name = self._dir_combo.currentText() if hasattr(self, "_dir_combo") else ""
+        _dir_full = self._customer_dir_map.get(_dir_name, _dir_name)
+        ctx = {
+            "project": self._project_combo.currentText() if hasattr(self, "_project_combo") else "",
+            "platform": self._board_combo.currentText() if hasattr(self, "_board_combo") else "",
+            "region": self._region_combo.currentText() if hasattr(self, "_region_combo") else "",
+            "customer": self._customer_combo.currentText() if hasattr(self, "_customer_combo") else "",
+            "customer_dir": _dir_full,
+            "target_dir": self._target_dir_input.text().strip() if hasattr(self, "_target_dir_input") else "",
+            "base_path": self._base_path,
+        }
+        self._analyze_worker = AnalyzeWorker(requirement_text, ctx)
+        self._analyze_worker.finished_ok.connect(self._on_analyze_done)
+        self._analyze_worker.finished_err.connect(self._on_analyze_error)
+        self._analyze_worker.start()
+
+    def _on_analyze_done(self, analysis: ai.AnalysisResult) -> None:
+        """分析完成回调（主线程）。"""
+        self._current_analysis = analysis
+        self.log_edit.append(f"[自动] 分析来源: {analysis.analyzer or '未知'}")
+        self.log_edit.append(f"[自动] 客户: {analysis.customer}")
+        self.log_edit.append(f"[自动] 平台: {analysis.platform}")
+        self.log_edit.append(f"[自动] 修改项: {len(analysis.modifications)} 条")
+        self._logger.info("自动分析完成")
+        self._review_service.request_review(analysis)
+
+    def _on_analyze_error(self, msg: str) -> None:
+        """分析失败回调（主线程）。"""
+        self.log_edit.append(f"[错误] 自动分析异常: {msg}")
+        self.run_button.setEnabled(True)
+        self.run_button.setText("  自动分析并提交审核")
 
     # ========== 审核 ==========
 

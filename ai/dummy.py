@@ -503,6 +503,7 @@ class DummyAnalyzer(RequirementAnalyzer):
             modifications=modifications, notes=notes,
             region=context.get("region", ""),
             target_dir=context.get("target_dir", ""),
+            analyzer="规则匹配",
         )
         self._logger.info("AI 分析完成: %d 条修改, %d 条警告", len(modifications), len(warnings))
         if warnings:

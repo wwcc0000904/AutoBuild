@@ -41,7 +41,7 @@ class OpenAIAnalyzer(RequirementAnalyzer):
             )
 
         system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(requirement_text)
+        user_prompt = self._build_user_prompt(requirement_text, context)
 
         try:
             raw = self._call_api(system_prompt, user_prompt)
@@ -49,7 +49,7 @@ class OpenAIAnalyzer(RequirementAnalyzer):
             self._logger.error("AI 分析调用失败: %s", e, exc_info=True)
             raise RuntimeError(f"AI 分析调用失败: {e}") from e
 
-        return self._parse_response(raw, requirement_text)
+        return self._parse_response(raw, requirement_text, context)
 
     # ── prompt 构造 ──
 
@@ -83,8 +83,19 @@ class OpenAIAnalyzer(RequirementAnalyzer):
         )
         return "\n".join(parts)
 
-    def _build_user_prompt(self, requirement_text: str) -> str:
-        return f"请分析以下客户需求，输出结构化 JSON：\n\n{requirement_text}"
+    def _build_user_prompt(self, requirement_text: str, context: dict) -> str:
+        ctx_lines = []
+        for k in ("project", "platform", "region", "customer", "customer_dir", "target_dir"):
+            v = context.get(k, "")
+            if v:
+                ctx_lines.append(f"- {k}: {v}")
+        ctx_block = "\n".join(ctx_lines) if ctx_lines else "（无）"
+        return (
+            f"## 当前上下文（用户在 UI 上选定的项目信息，请用于填充 customer/platform 等字段）\n"
+            f"{ctx_block}\n\n"
+            f"## 客户需求\n{requirement_text}\n\n"
+            f"请输出结构化 JSON。"
+        )
 
     # ── API 调用 ──
 
@@ -109,7 +120,8 @@ class OpenAIAnalyzer(RequirementAnalyzer):
 
     # ── 响应解析 ──
 
-    def _parse_response(self, response_text: str, requirement_text: str) -> AnalysisResult:
+    def _parse_response(self, response_text: str, requirement_text: str, context: dict | None = None) -> AnalysisResult:
+        context = context or {}
         text = response_text.strip()
         # 兼容模型偶尔带 markdown 代码块
         if text.startswith("```"):
@@ -124,22 +136,65 @@ class OpenAIAnalyzer(RequirementAnalyzer):
             self._logger.error("AI 返回非法 JSON: %s\n原始: %s", e, response_text[:300])
             raise RuntimeError(f"AI 返回了无效的 JSON: {e}") from e
 
-        required = ["customer", "platform", "project", "operation", "target_customer_dir"]
-        missing = [k for k in required if k not in data]
-        if missing:
-            raise RuntimeError(f"AI 返回缺少必填字段: {missing}")
+        # UI 上下文优先，模型返回值作为补充
+        def _pick(ctx_key: str, data_key: str, default: str = "") -> str:
+            v = str(context.get(ctx_key, "") or "").strip()
+            if not v:
+                v = str(data.get(data_key, "") or "").strip()
+            return v or default
 
         modifications = data.get("modifications", [])
         for mod in modifications:
             if "type" not in mod:
                 raise RuntimeError(f"修改项缺少 type 字段: {mod}")
 
+        # 注入固定规则：ctv_data_ensure（如 FakeInfoEnable），与 DummyAnalyzer 一致
+        modifications = self._inject_fixed_rules(modifications)
+
         return AnalysisResult(
-            customer=str(data["customer"]),
-            platform=str(data["platform"]),
-            project=str(data["project"]),
+            customer=_pick("customer", "customer"),
+            platform=_pick("platform", "platform"),
+            project=_pick("project", "project"),
             operation=str(data.get("operation", "copy_and_modify")),
-            target_customer_dir=str(data["target_customer_dir"]),
+            target_customer_dir=_pick("customer_dir", "target_customer_dir"),
             modifications=modifications,
             notes=str(data.get("notes", "")),
+            region=_pick("region", "region"),
+            target_dir=_pick("target_dir", "target_dir"),
+            analyzer=f"AI({self._model})",
         )
+
+    def _inject_fixed_rules(self, modifications: list[dict]) -> list[dict]:
+        """注入固定规则（与 DummyAnalyzer 行为一致）。
+
+        读取 feature_mapping.json 中的 ctv_data_ensure 列表，
+        如 FakeInfoEnable（不存在时添加到 customized 区域，默认值 true）。
+        这些规则不依赖需求文本，每次分析都应包含。
+        """
+        import json
+        try:
+            if not self._mapping_path or not self._mapping_path.exists():
+                return modifications
+            mapping = json.loads(self._mapping_path.read_text(encoding="utf-8"))
+        except Exception:
+            return modifications
+
+        # 已有的 ctv_data 节点名，避免重复
+        existing_names = {
+            m.get("name") for m in modifications if m.get("type") == "ctv_data"
+        }
+
+        for item in mapping.get("ctv_data_ensure", []):
+            name = item.get("name")
+            if not name or name in existing_names:
+                continue
+            modifications.append({
+                "type": "ctv_data",
+                "name": name,
+                "value": item.get("default_value", "true"),
+                "default_value": item.get("default_value", "true"),
+                "after_name": item.get("after_name"),
+            })
+            existing_names.add(name)
+
+        return modifications

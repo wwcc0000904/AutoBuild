@@ -36,9 +36,18 @@ class ReviewPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # 标题
-        title = QLabel("📋 人工审核 — 请确认以下分析结果")
+        title = QLabel("📋 人工审核 - 请确认以下分析结果")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; background: transparent;")
-        layout.addWidget(title)
+        title_row = QHBoxLayout()
+        title_row.addWidget(title)
+        title_row.addStretch()
+        self._analyzer_badge = QLabel()
+        self._analyzer_badge.setStyleSheet(
+            "background: #e8f0fe; color: #1a73e8; border-radius: 10px; "
+            "padding: 2px 10px; font-size: 12px; font-weight: 500;"
+        )
+        title_row.addWidget(self._analyzer_badge)
+        layout.addLayout(title_row)
 
         # ======== 基本信息 ========
         info_group = QGroupBox("基本信息")
@@ -209,6 +218,19 @@ class ReviewPanel(QWidget):
         return f"{mod}"
 
     def _populate(self, analysis: ai.AnalysisResult) -> None:
+        # 分析来源标识
+        src = analysis.analyzer or "未知"
+        self._analyzer_badge.setText(src)
+        if src.startswith("AI"):
+            self._analyzer_badge.setStyleSheet(
+                "background: #fef3c7; color: #92400e; border-radius: 10px; "
+                "padding: 2px 10px; font-size: 12px; font-weight: 500;"
+            )
+        else:
+            self._analyzer_badge.setStyleSheet(
+                "background: #f3f4f6; color: #6b7280; border-radius: 10px; "
+                "padding: 2px 10px; font-size: 12px; font-weight: 500;"
+            )
         self._info_labels["project"].setText(analysis.project)
         self._info_labels["platform"].setText(analysis.platform)
         self._info_labels["region"].setText(getattr(analysis, "region", ""))

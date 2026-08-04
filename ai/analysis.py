@@ -19,3 +19,4 @@ class AnalysisResult:
     notes: str                     # 备注或原始需求摘要
     region: str = ""               # 区域
     target_dir: str = ""           # 目标目录
+    analyzer: str = ""             # 分析来源标识，如 "规则匹配" / "AI(gpt-4o)"
