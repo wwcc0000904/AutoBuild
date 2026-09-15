@@ -13,18 +13,21 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QTextEdit,
+    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QComboBox,
     QGroupBox,
     QListView,
     QScrollArea,
+    QMenu,
 )
 
 import ai
 import qtawesome as qta
 from builder.build_service import BuildService
 from config.logging_setup import get_logger
+from config import themes
 from customer_project.project_manager import CustomerProjectManager
 from executor.build_queue import BuildQueue
 from review.review_service import ReviewService, ReviewDecision
@@ -125,20 +128,8 @@ class _LogEmitter(QObject):
 
 
 class MainWindow(QMainWindow):
-    # ---- 蓝灰毛玻璃主题配色 ----
-    CLR_BG = "#e0e3ed"           # 主背景（蓝灰，肉眼可见）
-    CLR_SIDEBAR = "#f5f6f9"      # 侧边栏（蓝灰白）
-    CLR_CARD = "#ffffff"     # 卡片背景（半透明白）
-    CLR_CARD_BORDER = "#e5e5e5"  # 卡片边框
-    CLR_INPUT_BG = "#f8f8f8"     # 输入框背景
-    CLR_INPUT_BORDER = "#dcdcdc"  # 输入框边框
-    CLR_TEXT = "#1a1a1a"         # 主文字（深灰蓝）
-    CLR_TEXT_DIM = "#888888"     # 次要文字
-    CLR_ACCENT = "#333333"       # 主色调（柔和紫）
-    CLR_ACCENT2 = "#555555"      # 辅助色（蓝）
-    CLR_GREEN = "#34c759"        # 成功
-    CLR_RED = "#ff3b30"          # 错误
-    CLR_ORANGE = "#ff9500"       # 警告
+    # 主题配色在 __init__ 中由 _load_theme() 设置为实例属性（self.CLR_*）
+    # 定义见 config/themes.py
 
     def __init__(
         self,
@@ -150,6 +141,8 @@ class MainWindow(QMainWindow):
         base_path: str = "",
     ) -> None:
         super().__init__()
+        self._theme_name = themes.load_theme_name()
+        self._load_theme(self._theme_name)
         self._project_manager = project_manager
         self._review_service = review_service
         self._build_service = build_service
@@ -203,32 +196,7 @@ class MainWindow(QMainWindow):
 
 
 
-        self.setStyleSheet(f"""
-            QMainWindow {{ background: {self.CLR_BG}; background-image: url(static/bg_frosted.png); background-position: center; }}
-            QWidget {{ color: {self.CLR_TEXT}; font-size: 12px; background: transparent; }}
-            QLabel {{ color: {self.CLR_TEXT}; background: transparent; }}
-            QGroupBox {{ color: {self.CLR_TEXT}; background: transparent; }}
-            QGroupBox::title {{ color: {self.CLR_TEXT}; }}
-            QTabWidget::pane {{ border: 1px solid #d5d8e0; background: {self.CLR_BG};
-                                border-radius: 10px; }}
-            QTabBar::tab {{ background: #eceef2; color: {self.CLR_TEXT_DIM};
-                            border: 1px solid #d5d8e0; padding: 8px 16px;
-                            border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 2px; }}
-            QTabBar::tab:selected {{ background: #ffffff; color: {self.CLR_ACCENT};
-                                     border-bottom-color: #ffffff; font-weight: bold; }}
-            QScrollArea {{ border: none; background: transparent; }}
-            QScrollBar:vertical {{ background: transparent; width: 6px; }}
-            QScrollBar::handle:vertical {{ background: #dcdcdc; border-radius: 3px; min-height: 30px; }}
-            QScrollBar::handle:vertical:hover {{ background: #1a1a1a; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-            QCheckBox {{ color: {self.CLR_TEXT}; spacing: 6px; background: transparent; }}
-            QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px;
-                                    border: 1.5px solid #dcdcdc; background: #ffffff; }}
-            QCheckBox::indicator:checked {{ background: {self.CLR_ACCENT}; border-color: {self.CLR_ACCENT}; }}
-            QSpinBox {{ background: #ffffff; color: {self.CLR_TEXT};
-                        border: 1px solid #d5d8e0; border-radius: 6px; padding: 4px; }}
-            QSpinBox:focus {{ border-color: {self.CLR_ACCENT}; }}
-        """)
+        self.setStyleSheet(self._global_stylesheet())
 
         central = QWidget(self)
         central.setStyleSheet(f"background: {self.CLR_BG};")
@@ -280,7 +248,8 @@ class MainWindow(QMainWindow):
         nav_icons = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt", "fa5s.code-branch"]
         for (text, idx), icon_name in zip(nav_items, nav_icons):
             btn = QPushButton(text)
-            btn.setIcon(qta.icon(icon_name, color="#888888"))
+            btn.setObjectName("nav_btn")
+            btn.setIcon(qta.icon(icon_name, color=self.CLR_TEXT_DIM))
             btn.setCursor(self.cursor())
             btn.setStyleSheet(self._nav_btn_style(False))
             btn.clicked.connect(lambda checked, i=idx: self._switch_mode(i))
@@ -288,15 +257,26 @@ class MainWindow(QMainWindow):
             self._nav_btns.append(btn)
 
 
-        # AI 设置按钮（底部）
+        sb_layout.addStretch()
+
+        # ---- 底部设置区 ----
+        # AI 设置按钮
         self._ai_btn = QPushButton("  AI 设置")
-        self._ai_btn.setIcon(qta.icon("fa5s.brain", color="#888888"))
+        self._ai_btn.setObjectName("nav_btn")
+        self._ai_btn.setIcon(qta.icon("fa5s.brain", color=self.CLR_TEXT_DIM))
         self._ai_btn.setCursor(self.cursor())
         self._ai_btn.setStyleSheet(self._nav_btn_style(False))
         self._ai_btn.clicked.connect(self._open_ai_settings)
         sb_layout.addWidget(self._ai_btn)
 
-        sb_layout.addStretch()
+        # 设置按钮（齿轮，弹出主题菜单）
+        self._settings_btn = QPushButton("  设置")
+        self._settings_btn.setObjectName("nav_btn")
+        self._settings_btn.setIcon(qta.icon("fa5s.cog", color=self.CLR_TEXT_DIM))
+        self._settings_btn.setCursor(self.cursor())
+        self._settings_btn.setStyleSheet(self._nav_btn_style(False))
+        self._settings_btn.clicked.connect(self._open_settings_menu)
+        sb_layout.addWidget(self._settings_btn)
 
         # ========== 右侧主内容区 ==========
         content_widget = QWidget()
@@ -312,12 +292,9 @@ class MainWindow(QMainWindow):
 
         # 重置按钮（卡片标题右侧）
         reset_btn = QPushButton("  重置")
-        reset_btn.setIcon(qta.icon("fa5s.undo", color="#888888"))
-        reset_btn.setStyleSheet(
-            f"QPushButton {{ background-color: transparent; color: {self.CLR_TEXT_DIM}; "
-            f"border: 1px solid {self.CLR_CARD_BORDER}; border-radius: 8px; padding: 6px 12px; font-size: 11px; }}"
-            f"QPushButton:hover {{ background-color: rgba(0,0,0,0.06); }}"
-        )
+        reset_btn.setIcon(qta.icon("fa5s.undo", color=self.CLR_TEXT_DIM))
+        reset_btn.setObjectName("small_btn")
+        reset_btn.setStyleSheet(self._small_btn_style())
         reset_btn.clicked.connect(self._reset_all)
         # 把重置按钮放到卡片标题旁边
         title_row = QHBoxLayout()
@@ -374,7 +351,8 @@ class MainWindow(QMainWindow):
         self._target_dir_input.textChanged.connect(self._on_target_dir_changed)
         row3.addWidget(self._target_dir_input, 1)
         copy_btn = QPushButton("  复制客户目录名")
-        copy_btn.setIcon(qta.icon("fa5s.copy", color="#888888"))
+        copy_btn.setIcon(qta.icon("fa5s.copy", color=self.CLR_TEXT_DIM))
+        copy_btn.setObjectName("small_btn")
         copy_btn.setStyleSheet(self._small_btn_style())
         copy_btn.clicked.connect(self._copy_source_name)
         row3.addWidget(copy_btn)
@@ -392,10 +370,12 @@ class MainWindow(QMainWindow):
         self._search_input.returnPressed.connect(self._on_search)
         row4.addWidget(self._search_input, 1)
         search_btn = QPushButton("查找")
+        search_btn.setObjectName("accent_btn")
         search_btn.setStyleSheet(self._accent_btn_style())
         search_btn.clicked.connect(self._on_search)
         row4.addWidget(search_btn)
         clear_btn = QPushButton("清除")
+        clear_btn.setObjectName("small_btn")
         clear_btn.setStyleSheet(self._small_btn_style())
         clear_btn.clicked.connect(self._on_search_clear)
         row4.addWidget(clear_btn)
@@ -476,39 +456,165 @@ class MainWindow(QMainWindow):
         # 初始化目录
         self._refresh_projects()
 
-    # ========== 样式工具 ==========
+    # ========== 主题 / 样式工具 ==========
+
+    def _load_theme(self, name: str) -> None:
+        """从 config.themes 加载配色到实例属性 self.CLR_*。"""
+        palette = themes.get_theme(name)
+        for key, val in palette.items():
+            setattr(self, key, val)
+        self._theme_name = name
+
+    def _global_stylesheet(self) -> str:
+        """全局样式表（覆盖 QMainWindow 及通用控件）。"""
+        bg_img = themes.get_theme_meta(self._theme_name).get("bg_image", "")
+        bg_line = f"background-image: url({bg_img}); background-position: center;" if bg_img else ""
+        return f"""
+            QMainWindow {{ background: {self.CLR_BG}; {bg_line} }}
+            QWidget {{ color: {self.CLR_TEXT}; font-size: 12px; background: transparent; }}
+            QLabel {{ color: {self.CLR_TEXT}; background: transparent; }}
+            QGroupBox {{ color: {self.CLR_TEXT}; background: transparent; }}
+            QGroupBox::title {{ color: {self.CLR_TEXT}; }}
+            QTabWidget::pane {{ border: 1px solid {self.CLR_BORDER}; background: {self.CLR_BG};
+                                border-radius: 10px; }}
+            QTabBar::tab {{ background: {self.CLR_TAB_BG}; color: {self.CLR_TEXT_DIM};
+                            border: 1px solid {self.CLR_BORDER}; padding: 8px 16px;
+                            border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 2px; }}
+            QTabBar::tab:selected {{ background: {self.CLR_TAB_SELECTED}; color: {self.CLR_ACCENT};
+                                     border-bottom-color: {self.CLR_TAB_SELECTED}; font-weight: bold; }}
+            QScrollArea {{ border: none; background: transparent; }}
+            QScrollBar:vertical {{ background: transparent; width: 6px; }}
+            QScrollBar::handle:vertical {{ background: {self.CLR_SCROLLBAR}; border-radius: 3px; min-height: 30px; }}
+            QScrollBar::handle:vertical:hover {{ background: {self.CLR_SCROLLBAR_HOVER}; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            QCheckBox {{ color: {self.CLR_TEXT}; spacing: 6px; background: transparent; }}
+            QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px;
+                                    border: 1.5px solid {self.CLR_CHECKBOX_BORDER}; background: {self.CLR_CHECKBOX_BG}; }}
+            QCheckBox::indicator:checked {{ background: {self.CLR_ACCENT}; border-color: {self.CLR_ACCENT}; }}
+            QSpinBox {{ background: {self.CLR_SPINBOX_BG}; color: {self.CLR_TEXT};
+                        border: 1px solid {self.CLR_BORDER}; border-radius: 6px; padding: 4px; }}
+            QSpinBox:focus {{ border-color: {self.CLR_ACCENT}; }}
+            QPlainTextEdit {{ background-color: transparent; color: {self.CLR_TEXT};
+                              border: 1px solid {self.CLR_INPUT_BORDER}; border-radius: 8px;
+                              padding: 8px; font-family: Menlo,Consolas,monospace; font-size: 12px; }}
+        """
+
+    def _open_settings_menu(self) -> None:
+        """弹出设置菜单（主题切换）。"""
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {self.CLR_CARD}; color: {self.CLR_TEXT}; border: 1px solid {self.CLR_CARD_BORDER}; }}"
+            f"QMenu::item {{ padding: 6px 24px; }}"
+            f"QMenu::item:selected {{ background: {self.CLR_HOVER}; }}"
+        )
+        sub = menu.addMenu("  主题")
+        for name in themes.get_theme_names():
+            label = themes.get_theme_label(name)
+            act = sub.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(name == self._theme_name)
+            act.triggered.connect(lambda checked=False, n=name: self._apply_theme(n))
+        menu.addSeparator()
+        act_ai = menu.addAction("  AI 设置…")
+        act_ai.triggered.connect(self._open_ai_settings)
+        btn = self._settings_btn
+        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _apply_theme(self, name: str) -> None:
+        """切换主题并刷新全部样式。"""
+        self._load_theme(name)
+        themes.save_theme_name(name)
+        self._refresh_theme()
+
+    def _refresh_theme(self) -> None:
+        """重新应用所有样式表（主题切换后调用）。"""
+        # 全局样式
+        self.setStyleSheet(self._global_stylesheet())
+        # central / sidebar / content 背景
+        central = self.centralWidget()
+        if central:
+            central.setStyleSheet(f"background: {self.CLR_BG};")
+        sb = self.findChild(QWidget, "")  # fallback: walk children
+        # 侧边栏（第一个固定 200px 的 QWidget）
+        for w in self.findChildren(QWidget):
+            if w.isWidgetType() and w.parent() is central and w.minimumWidth() == 200 == w.maximumWidth():
+                w.setStyleSheet(f"background: {self.CLR_SIDEBAR};")
+                break
+        # 导航按钮（含 AI / 设置）
+        active_idx = getattr(self, "_current_mode_idx", 0)
+        for btn in self._nav_btns:
+            idx = self._nav_btns.index(btn)
+            btn.setStyleSheet(self._nav_btn_style(idx == active_idx))
+        if hasattr(self, "_ai_btn"):
+            self._ai_btn.setStyleSheet(self._nav_btn_style(False))
+        if hasattr(self, "_settings_btn"):
+            self._settings_btn.setStyleSheet(self._nav_btn_style(False))
+        self._update_nav_icons(active_idx)
+        # 各类子控件按 objectName / 类型批量刷新
+        for btn in self.findChildren(QPushButton):
+            role = btn.objectName()
+            if role == "accent_btn":
+                btn.setStyleSheet(self._accent_btn_style())
+            elif role == "small_btn":
+                btn.setStyleSheet(self._small_btn_style())
+        for combo in self.findChildren(QComboBox):
+            combo.setStyleSheet(self._combo_style())
+            self._fix_combo(combo)
+        for le in self.findChildren(QLineEdit):
+            le.setStyleSheet(self._input_style())
+        for te in self.findChildren(QTextEdit) + self.findChildren(QPlainTextEdit):
+            te.setStyleSheet(self._text_edit_style())
+        for gb in self.findChildren(QGroupBox):
+            if gb.objectName() == "card":
+                gb.setStyleSheet(
+                    f"QGroupBox {{ background-color: {self.CLR_CARD}; border: 1px solid {self.CLR_CARD_BORDER}; "
+                    f"border-radius: 12px; padding: 16px 12px 8px 12px; margin-top: 16px; font-size: 13px; "
+                    f"font-weight: bold; color: {self.CLR_TEXT}; }}"
+                    f"QGroupBox::title {{ subcontrol-origin: margin; left: 16px; padding: 0 8px; }}"
+                )
+        # 通知子面板刷新（ManualPanel 等若实现了 apply_theme）
+        for child in self.findChildren(QWidget):
+            if hasattr(child, "apply_theme") and callable(child.apply_theme):
+                try:
+                    child.apply_theme(self._theme_name)
+                except Exception:
+                    pass
 
     def _nav_btn_style(self, active: bool) -> str:
         if active:
             return (
-                f"QPushButton {{ background-color: #e8e8e8; color: {self.CLR_TEXT}; "
+                f"QPushButton {{ background-color: {self.CLR_NAV_ACTIVE}; color: {self.CLR_TEXT}; "
                 f"border: none; border-radius: 10px; padding: 11px 16px; font-size: 13px; "
                 f"text-align: left; font-weight: bold; }}"
-                f"QPushButton:hover {{ background-color: #e0e0e0; }}"
-                f"QPushButton:pressed {{ background-color: #d8d8d8; }}"
+                f"QPushButton:hover {{ background-color: {self.CLR_PRESSED}; }}"
+                f"QPushButton:pressed {{ background-color: {self.CLR_HOVER}; }}"
             )
         return (
             f"QPushButton {{ background-color: transparent; color: {self.CLR_TEXT_DIM}; "
             f"border: none; border-radius: 10px; padding: 11px 16px; font-size: 13px; text-align: left; }}"
-            f"QPushButton:hover {{ background-color: #f0f0f0; color: {self.CLR_TEXT}; }}"
-            f"QPushButton:pressed {{ background-color: #e0e0e0; }}"
+            f"QPushButton:hover {{ background-color: {self.CLR_HOVER}; color: {self.CLR_TEXT}; }}"
+            f"QPushButton:pressed {{ background-color: {self.CLR_PRESSED}; }}"
         )
 
     def _update_nav_icons(self, active_idx: int):
         nav_icon_names = ["fa5s.robot", "fa5s.wrench", "fa5s.clipboard-check", "fa5s.chart-bar", "fa5s.list", "fa5s.hammer", "fa5s.cogs", "fa5s.cloud-upload-alt", "fa5s.code-branch"]
         for i, btn in enumerate(self._nav_btns):
-            color = "#1a1a1a" if i == active_idx else "#888888"
+            color = self.CLR_TEXT if i == active_idx else self.CLR_TEXT_DIM
             btn.setIcon(qta.icon(nav_icon_names[i], color=color))
+        # AI / 设置按钮图标也刷新
+        if hasattr(self, "_ai_btn"):
+            self._ai_btn.setIcon(qta.icon("fa5s.brain", color=self.CLR_TEXT_DIM))
+        if hasattr(self, "_settings_btn"):
+            self._settings_btn.setIcon(qta.icon("fa5s.cog", color=self.CLR_TEXT_DIM))
 
-    @staticmethod
-    def _fix_combo(combo: QComboBox):
+    def _fix_combo(self, combo: QComboBox):
         """强制 QComboBox 使用 Qt 渲染下拉列表（macOS 原生不支持样式表）。"""
         view = QListView()
         view.setStyleSheet(
-            "QListView { background: #ffffff; border: 1px solid #e5e5e5; outline: none; }"
-            "QListView::item { padding: 2px 8px; }"
-            "QListView::item:hover { background: #f0f0f0; }"
-            "QListView::item:selected { background: #e0e0e0; color: #1a1a1a; }"
+            f"QListView {{ background: {self.CLR_LIST_BG}; border: 1px solid {self.CLR_CARD_BORDER}; outline: none; }}"
+            f"QListView::item {{ padding: 2px 8px; }}"
+            f"QListView::item:hover {{ background: {self.CLR_LIST_HOVER}; }}"
+            f"QListView::item:selected {{ background: {self.CLR_LIST_SELECTED}; color: {self.CLR_TEXT}; }}"
         )
         view.setUniformItemSizes(True)
         combo.setView(view)
@@ -517,16 +623,16 @@ class MainWindow(QMainWindow):
     def _combo_style(self) -> str:
         return (
             f"QComboBox {{ background-color: transparent; color: {self.CLR_TEXT}; "
-            f"border: 1px solid #dcdcdc; border-radius: 6px; "
+            f"border: 1px solid {self.CLR_INPUT_BORDER}; border-radius: 6px; "
             f"padding: 6px 10px; font-size: 12px; }}"
-            f"QComboBox:hover {{ background-color: #f0f0f0; border-color: #aaaaaa; }}"
-            f"QComboBox:focus {{ border-color: #999999; background-color: #f5f5f5; }}"
+            f"QComboBox:hover {{ background-color: {self.CLR_COMBO_HOVER}; border-color: {self.CLR_COMBO_BORDER_HOVER}; }}"
+            f"QComboBox:focus {{ border-color: {self.CLR_COMBO_BORDER_FOCUS}; background-color: {self.CLR_COMBO_FOCUS_BG}; }}"
             f"QComboBox::drop-down {{ border: none; width: 20px; }}"
         )
 
     def _input_style(self) -> str:
         return (
-            f"QLineEdit {{ background-color: {"transparent"}; color: {self.CLR_TEXT}; "
+            f"QLineEdit {{ background-color: transparent; color: {self.CLR_TEXT}; "
             f"border: 1px solid {self.CLR_INPUT_BORDER}; border-radius: 6px; "
             f"padding: 6px 10px; font-size: 12px; }}"
             f"QLineEdit:focus {{ border-color: {self.CLR_ACCENT}; }}"
@@ -534,18 +640,18 @@ class MainWindow(QMainWindow):
 
     def _text_edit_style(self) -> str:
         return (
-            f"QTextEdit {{ background-color: {"transparent"}; color: {self.CLR_TEXT}; "
+            f"QTextEdit, QPlainTextEdit {{ background-color: transparent; color: {self.CLR_TEXT}; "
             f"border: 1px solid {self.CLR_INPUT_BORDER}; border-radius: 8px; "
             f"padding: 8px; font-family: Menlo,Consolas,monospace; font-size: 12px; }}"
         )
 
     def _accent_btn_style(self) -> str:
         return (
-            f"QPushButton {{ background-color: #e0e0e0; color: {self.CLR_TEXT}; "
+            f"QPushButton {{ background-color: {self.CLR_PRESSED}; color: {self.CLR_TEXT}; "
             f"border: none; border-radius: 8px; padding: 8px 18px; font-size: 12px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background-color: #d5d5d5; }}"
-            f"QPushButton:pressed {{ background-color: #cccccc; }}"
-            f"QPushButton:disabled {{ background: #f0f0f0; color: #aaa; }}"
+            f"QPushButton:hover {{ background-color: {self.CLR_ACCENT_HOVER}; }}"
+            f"QPushButton:pressed {{ background-color: {self.CLR_ACCENT_PRESSED}; }}"
+            f"QPushButton:disabled {{ background: {self.CLR_ACCENT_DISABLED_BG}; color: {self.CLR_ACCENT_DISABLED_FG}; }}"
         )
 
     def _small_btn_style(self) -> str:
@@ -553,8 +659,8 @@ class MainWindow(QMainWindow):
             f"QPushButton {{ background-color: transparent; color: {self.CLR_TEXT_DIM}; "
             f"border: 1px solid {self.CLR_INPUT_BORDER}; border-radius: 6px; "
             f"padding: 5px 12px; font-size: 11px; }}"
-            f"QPushButton:hover {{ background-color: #f0f0f0; border-color: #d0d0d0; color: {self.CLR_TEXT}; }}"
-            f"QPushButton:pressed {{ background-color: #e0e0e0; }}"
+            f"QPushButton:hover {{ background-color: {self.CLR_SMALL_HOVER}; border-color: {self.CLR_CARD_BORDER}; color: {self.CLR_TEXT}; }}"
+            f"QPushButton:pressed {{ background-color: {self.CLR_SMALL_PRESSED}; }}"
         )
 
         lbl = card.findChild(QLabel, "stat_value")
@@ -563,6 +669,7 @@ class MainWindow(QMainWindow):
 
     def _make_card(self, title: str) -> QGroupBox:
         card = QGroupBox(title)
+        card.setObjectName("card")
         card.setStyleSheet(
             f"QGroupBox {{ background-color: {self.CLR_CARD}; border: 1px solid {self.CLR_CARD_BORDER}; "
             f"border-radius: 12px; padding: 16px 12px 8px 12px; margin-top: 16px; font-size: 13px; "
@@ -1020,6 +1127,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _switch_mode(self, index: int) -> None:
+        self._current_mode_idx = index
         self._stack.setCurrentIndex(index)
         # 规则管理和编译队列页面隐藏目录设置
         self._dir_card.setVisible(index not in (4, 5, 6, 7, 8))
@@ -1060,11 +1168,13 @@ class MainWindow(QMainWindow):
         req_header = QHBoxLayout()
         req_header.addStretch()
         import_btn = QPushButton("  导入文件")
-        import_btn.setIcon(qta.icon("fa5s.folder-open", color="#888888"))
+        import_btn.setIcon(qta.icon("fa5s.folder-open", color=self.CLR_TEXT_DIM))
+        import_btn.setObjectName("small_btn")
         import_btn.setStyleSheet(self._small_btn_style())
         import_btn.clicked.connect(self._import_requirement_file)
         req_header.addWidget(import_btn)
         clear_btn = QPushButton("🗑 清空")
+        clear_btn.setObjectName("small_btn")
         clear_btn.setStyleSheet(self._small_btn_style())
         clear_btn.clicked.connect(lambda: self.requirement_edit.clear())
         req_header.addWidget(clear_btn)
@@ -1080,6 +1190,7 @@ class MainWindow(QMainWindow):
 
         self.run_button = QPushButton("  自动分析并提交审核")
         self.run_button.setIcon(qta.icon("fa5s.rocket", color="#1a1a1a"))
+        self.run_button.setObjectName("accent_btn")
         self.run_button.setStyleSheet(self._accent_btn_style())
         self.run_button.clicked.connect(self._on_analyze)
         req_layout.addWidget(self.run_button)
@@ -1189,6 +1300,7 @@ class MainWindow(QMainWindow):
         self._enqueue_btn.setVisible(False)
         btn_layout.addWidget(self._enqueue_btn)
         back_btn = QPushButton("← 返回")
+        back_btn.setObjectName("small_btn")
         back_btn.setStyleSheet(self._small_btn_style())
         back_btn.clicked.connect(lambda: self._switch_mode(0))
         btn_layout.addWidget(back_btn)
@@ -1226,12 +1338,14 @@ class MainWindow(QMainWindow):
         build_btn_row.addStretch()
         self._build_btn = QPushButton("  开始编译")
         self._build_btn.setIcon(qta.icon("fa5s.hammer", color="#1a1a1a"))
+        self._build_btn.setObjectName("accent_btn")
         self._build_btn.setStyleSheet(self._accent_btn_style())
         self._build_btn.clicked.connect(self._on_start_build)
         build_btn_row.addWidget(self._build_btn)
 
         self._cancel_build_btn = QPushButton("  取消(Ctrl+C)")
         self._cancel_build_btn.setIcon(qta.icon("fa5s.stop-circle", color="#e17055"))
+        self._cancel_build_btn.setObjectName("small_btn")
         self._cancel_build_btn.setStyleSheet(self._small_btn_style())
         self._cancel_build_btn.clicked.connect(self._on_cancel_build)
         build_btn_row.addWidget(self._cancel_build_btn)
@@ -1258,6 +1372,7 @@ class MainWindow(QMainWindow):
         self._build_input.set_tab_callback(self._do_remote_completion)
         input_row.addWidget(self._build_input, 1)
         send_btn = QPushButton("发送")
+        send_btn.setObjectName("small_btn")
         send_btn.setStyleSheet(self._small_btn_style())
         send_btn.clicked.connect(self._on_build_input_send)
         input_row.addWidget(send_btn)
@@ -1281,6 +1396,7 @@ class MainWindow(QMainWindow):
         ]
         for label, cmd in tmux_cmds:
             btn = QPushButton(label)
+            btn.setObjectName("small_btn")
             btn.setStyleSheet(self._small_btn_style())
             btn.clicked.connect(lambda checked, c=cmd: self._exec_quick_cmd(c))
             tmux_row.addWidget(btn)
@@ -1290,6 +1406,7 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         back_btn = QPushButton("← 返回执行结果")
+        back_btn.setObjectName("small_btn")
         back_btn.setStyleSheet(self._small_btn_style())
         back_btn.clicked.connect(lambda: self._switch_mode(3))
         btn_row.addWidget(back_btn)
@@ -1338,6 +1455,7 @@ class MainWindow(QMainWindow):
         self._wdav_folder_input.setText(self._wdav_folder)
         r2.addWidget(self._wdav_folder_input, 1)
         save_btn = QPushButton("  保存设置")
+        save_btn.setObjectName("small_btn")
         save_btn.setStyleSheet(self._small_btn_style())
         save_btn.clicked.connect(self._save_webdav_settings)
         r2.addWidget(save_btn)
@@ -1355,10 +1473,12 @@ class MainWindow(QMainWindow):
         queue_header.addWidget(self._upload_queue_title)
         queue_header.addStretch()
         remove_btn = QPushButton("  移除选中")
+        remove_btn.setObjectName("small_btn")
         remove_btn.setStyleSheet(self._small_btn_style())
         remove_btn.clicked.connect(self._on_remove_selected)
         queue_header.addWidget(remove_btn)
         clear_btn = QPushButton("  清空列表")
+        clear_btn.setObjectName("small_btn")
         clear_btn.setStyleSheet(self._small_btn_style())
         clear_btn.clicked.connect(self._on_clear_queue)
         queue_header.addWidget(clear_btn)
@@ -1379,12 +1499,14 @@ class MainWindow(QMainWindow):
         r3 = QHBoxLayout(); r3.setSpacing(10)
         browse_btn = QPushButton("  浏览服务器添加")
         browse_btn.setIcon(qta.icon("fa5s.folder-open", color="#888"))
+        browse_btn.setObjectName("small_btn")
         browse_btn.setStyleSheet(self._small_btn_style())
         browse_btn.clicked.connect(self._on_browse_server)
         r3.addWidget(browse_btn)
         r3.addStretch()
         self._upload_btn = QPushButton("  全部上传")
         self._upload_btn.setIcon(qta.icon("fa5s.cloud-upload-alt", color="#1a1a1a"))
+        self._upload_btn.setObjectName("accent_btn")
         self._upload_btn.setStyleSheet(self._accent_btn_style())
         self._upload_btn.clicked.connect(self._on_upload)
         r3.addWidget(self._upload_btn)
@@ -1621,6 +1743,7 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         select_btn = QPushButton("  添加到队列")
+        select_btn.setObjectName("accent_btn")
         select_btn.setStyleSheet(self._accent_btn_style())
         def _select():
             current = file_list.currentItem()
@@ -1632,6 +1755,7 @@ class MainWindow(QMainWindow):
         select_btn.clicked.connect(_select)
         btn_row.addWidget(select_btn)
         cancel_btn = QPushButton("  取消")
+        cancel_btn.setObjectName("small_btn")
         cancel_btn.setStyleSheet(self._small_btn_style())
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
@@ -1753,11 +1877,13 @@ class MainWindow(QMainWindow):
 
             btn1 = QPushButton("  复制全部")
             btn1.setIcon(qta.icon("fa5s.copy", color="#888"))
+            btn1.setObjectName("small_btn")
             btn1.setStyleSheet(self._small_btn_style())
             btn1.clicked.connect(_copy_one)
             row.addWidget(btn1)
             btn2 = QPushButton("  复制路径")
             btn2.setIcon(qta.icon("fa5s.copy", color="#888"))
+            btn2.setObjectName("small_btn")
             btn2.setStyleSheet(self._small_btn_style())
             btn2.clicked.connect(_copy_path)
             row.addWidget(btn2)

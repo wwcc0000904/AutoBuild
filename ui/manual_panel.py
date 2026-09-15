@@ -18,11 +18,28 @@ from remote_config_reader import RemoteConfigReader
 
 
 # ── 样式 ──────────────────────────────────────────────────
-_C = {
-    "bg": "#e0e3ed", "card": "#ffffff", "border": "#e5e5e5",
-    "text": "#1a1a1a", "dim": "#999999", "blue": "#4a90d9",
-    "green": "#27ae60", "orange": "#e67e22", "input_border": "#dcdcdc",
-}
+from config import themes as _themes
+
+# 当前配色缓存（由 ManualPanel.apply_theme 刷新）
+_C: dict = {}
+
+
+def _refresh_colors() -> None:
+    """从 config.themes 读取当前主题配色，填充 _C 映射。"""
+    name = _themes.load_theme_name()
+    p = _themes.get_theme(name)
+    _C.clear()
+    _C.update({
+        "bg": p["CLR_BG"], "card": p["CLR_CARD"], "border": p["CLR_CARD_BORDER"],
+        "text": p["CLR_TEXT"], "dim": p["CLR_TEXT_DIM"], "blue": p["CLR_ACCENT"],
+        "green": p["CLR_GREEN"], "orange": p["CLR_ORANGE"],
+        "input_border": p["CLR_INPUT_BORDER"],
+        "hover": p["CLR_HOVER"], "list_bg": p["CLR_LIST_BG"],
+        "list_hover": p["CLR_LIST_HOVER"], "list_selected": p["CLR_LIST_SELECTED"],
+    })
+
+
+_refresh_colors()
 
 
 def _card(title: str, subtitle: str = "") -> QGroupBox:
@@ -64,15 +81,15 @@ def _combo(items: list[str]) -> QComboBox:
     c = QComboBox()
     c.addItems(items)
     c.setStyleSheet(
-        f"QComboBox{{background:#fff;color:{_C['text']};border:1px solid {_C['input_border']};"
+        f"QComboBox{{background:{_C['card']};color:{_C['text']};border:1px solid {_C['input_border']};"
         f"border-radius:6px;padding:5px 10px;font-size:12px;min-width:120px;}}"
-        f"QComboBox:hover{{border-color:#aaa;}}QComboBox::drop-down{{border:none;width:20px;}}"
+        f"QComboBox:hover{{border-color:{_C['dim']};}}QComboBox::drop-down{{border:none;width:20px;}}"
     )
     v = QListView()
-    v.setStyleSheet("QListView{background:#fff;border:1px solid #e5e5e5;outline:none;}"
-                    "QListView::item{padding:3px 10px;}"
-                    "QListView::item:hover{background:#f0f0f0;}"
-                    "QListView::item:selected{background:#e0e0e0;color:#1a1a1a;}")
+    v.setStyleSheet(f"QListView{{background:{_C['list_bg']};border:1px solid {_C['border']};outline:none;}}"
+                    f"QListView::item{{padding:3px 10px;}}"
+                    f"QListView::item:hover{{background:{_C['list_hover']};}}"
+                    f"QListView::item:selected{{background:{_C['list_selected']};color:{_C['text']};}}")
     v.setUniformItemSizes(True)
     c.setView(v)
     c.setMaxVisibleItems(15)
@@ -84,7 +101,7 @@ def _input(ph: str = "") -> QLineEdit:
     e.setPlaceholderText(ph)
     e.setMinimumWidth(120)
     e.setStyleSheet(
-        f"QLineEdit{{background:#fff;color:{_C['text']};border:1px solid {_C['input_border']};"
+        f"QLineEdit{{background:{_C['card']};color:{_C['text']};border:1px solid {_C['input_border']};"
         f"border-radius:6px;padding:5px 10px;font-size:12px;}}"
         f"QLineEdit:focus{{border-color:{_C['blue']};}}"
     )
@@ -336,6 +353,42 @@ class ManualPanel(QWidget):
     def _load_mapping(self) -> dict:
         p = Path("config/feature_mapping.json")
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+    def apply_theme(self, _name: str = "") -> None:
+        """主题切换时刷新配色并重建卡片样式。"""
+        _refresh_colors()
+        c = _C
+        # 刷新所有卡片
+        for card in self.findChildren(QGroupBox):
+            card.setStyleSheet(
+                f"QGroupBox {{ background: {c['card']}; border: 1px solid {c['border']};"
+                f" border-radius: 12px; padding: 20px 16px 12px 16px; margin-top: 18px; }}"
+                f"QGroupBox::title {{ subcontrol-origin: margin; left: 16px; padding: 0 8px; }}"
+            )
+        # 刷新输入框 / 下拉框
+        for le in self.findChildren(QLineEdit):
+            le.setStyleSheet(
+                f"QLineEdit{{background:{c['card']};color:{c['text']};border:1px solid {c['input_border']};"
+                f"border-radius:6px;padding:5px 10px;font-size:12px;}}"
+                f"QLineEdit:focus{{border-color:{c['blue']};}}"
+            )
+        for cb in self.findChildren(QComboBox):
+            cb.setStyleSheet(
+                f"QComboBox{{background:{c['card']};color:{c['text']};border:1px solid {c['input_border']};"
+                f"border-radius:6px;padding:5px 10px;font-size:12px;min-width:120px;}}"
+                f"QComboBox:hover{{border-color:{c['dim']};}}QComboBox::drop-down{{border:none;width:20px;}}"
+            )
+        # 刷新标签颜色
+        for lbl in self.findChildren(QLabel):
+            # 只刷新没有特殊内联色的标签（通过重新设样式覆盖）
+            old_ss = lbl.styleSheet()
+            if "color:" in old_ss:
+                # 替换 text / dim 色
+                new_ss = old_ss
+                for old_c, new_c in [("#1a1a1a", c["text"]), ("#999999", c["dim"]),
+                                     ("#888888", c["dim"]), ("#4a90d9", c["blue"])]:
+                    new_ss = new_ss.replace(old_c, new_c)
+                lbl.setStyleSheet(new_ss)
 
     # ── 加载远程配置 ──
 
